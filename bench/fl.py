@@ -24,6 +24,7 @@ class Config:
     n_clients: int = 20
     rounds: int = 50
     local_epochs: int = 1
+    local_steps: Optional[int] = None  # if set, overrides local_epochs (ablation)
     batch_size: int = 32
     lr: float = 0.05
     server_lr: float = 1.0
@@ -36,17 +37,34 @@ class Config:
     device: str = "auto"
 
 
+def _batches(n, cfg, gen, device):
+    """Minibatch indices for one client. Default: local_epochs full passes,
+    so clients with more data take more steps. With local_steps set, every
+    client takes exactly that many steps, reshuffling after each pass."""
+    bs = cfg.batch_size
+    if cfg.local_steps is None:
+        for _ in range(cfg.local_epochs):
+            perm = torch.randperm(n, generator=gen).to(device)
+            yield from (perm[i:i + bs] for i in range(0, n, bs))
+        return
+    steps = 0
+    while True:
+        perm = torch.randperm(n, generator=gen).to(device)
+        for i in range(0, n, bs):
+            yield perm[i:i + bs]
+            steps += 1
+            if steps == cfg.local_steps:
+                return
+
+
 def _train(model, x, y, cfg, gen, device):
     opt = torch.optim.SGD(model.parameters(), lr=cfg.lr)
     model.train()
-    for _ in range(cfg.local_epochs):
-        perm = torch.randperm(len(y), generator=gen).to(device)
-        for i in range(0, len(y), cfg.batch_size):
-            b = perm[i:i + cfg.batch_size]
-            loss = F.cross_entropy(model(x[b]), y[b])
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
+    for b in _batches(len(y), cfg, gen, device):
+        loss = F.cross_entropy(model(x[b]), y[b])
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
 
 
 @torch.no_grad()

@@ -15,15 +15,16 @@ def run_name(cfg: Config) -> str:
     # Optional parts are added only when set, so names of default runs don't change
     fa = "" if cfg.f_assumed is None else f"_fa{cfg.f_assumed}"
     tau = f"_tau{cfg.cc_tau}" if cfg.aggregator == "cc" else ""
+    ls = "" if cfg.local_steps is None else f"_ls{cfg.local_steps}"
     return (f"{cfg.dataset}_a{cfg.alpha}_{cfg.aggregator}{tau}_{cfg.attack}"
-            f"_b{cfg.byz_frac}{fa}_s{cfg.seed}")
+            f"_b{cfg.byz_frac}{fa}{ls}_s{cfg.seed}")
 
 
 def main():
     p = argparse.ArgumentParser()
     for fld in fields(Config):
         typ = float if fld.type in (float, "float") else int if fld.type in (int, "int") else str
-        if fld.name == "f_assumed":
+        if fld.name in ("f_assumed", "local_steps"):  # Optional[int] fields
             typ = int
         p.add_argument(f"--{fld.name}", type=typ, default=fld.default)
     p.add_argument("--out", default="results")

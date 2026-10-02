@@ -71,6 +71,18 @@ python summarize.py              # mean +/- std table -> summary.csv
 of Byzantine clients (`--f_assumed` overrides this). FedAvg uses a uniform,
 not sample-weighted, average so every rule sees the same inputs.
 
+**Clean baselines** (`attack none` in `sweep.py`) have no Byzantine clients,
+but the server still assumes f = round(byz_frac * n), so the clean row shows
+the cost of robustness. These runs are tagged `_fa{f}` in their file names.
+
+**Local-steps ablation:** `--local_steps K` makes every client take exactly K
+SGD steps instead of one epoch, so update size no longer scales with client
+data size (tagged `_ls{K}`). K = 94 matches the average steps of one epoch
+(3000 samples / batch 32).
+
+**Parallel sweeps:** `--shard i/N` runs every N-th grid point, so N processes
+can split one grid (e.g. `--shard 0/2` and `--shard 1/2`).
+
 ## Known limitations / TODO
 
 - Centered Clipping's radius `--cc_tau` should be tuned on clean runs first.
