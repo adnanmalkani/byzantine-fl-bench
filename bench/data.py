@@ -46,6 +46,21 @@ def load_dataset(name: str, root: str = "./data"):
     return (xtr - mean) / std, ytr, (xte - mean) / std, yte, 10
 
 
+def train_val_split(labels, val_frac: float, seed: int):
+    """Hold out val_frac of the training samples (stratified by class) for
+    hyperparameter tuning, so the test set is only used for final results.
+    Returns (train_idx, val_idx)."""
+    rng = np.random.default_rng(seed)
+    labels = np.asarray(labels)
+    tr, va = [], []
+    for c in np.unique(labels):
+        ids = rng.permutation(np.where(labels == c)[0])
+        k = int(round(val_frac * len(ids)))
+        va.append(ids[:k])
+        tr.append(ids[k:])
+    return np.sort(np.concatenate(tr)), np.sort(np.concatenate(va))
+
+
 def dirichlet_partition(labels, n_clients: int, alpha: float, seed: int,
                         min_size: int = 10, max_tries: int = 100):
     """Split sample indices across clients with class proportions drawn from

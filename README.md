@@ -83,8 +83,29 @@ data size (tagged `_ls{K}`). K = 94 matches the average steps of one epoch
 **Parallel sweeps:** `--shard i/N` runs every N-th grid point, so N processes
 can split one grid (e.g. `--shard 0/2` and `--shard 1/2`).
 
+## Tuning CC's tau (per dataset, on a validation split)
+
+Update norms differ across datasets, so Centered Clipping's radius tau is
+tuned separately for each dataset, and never on the test set:
+
+1. `python tune_cc.py --dataset <name>` runs clean CC (no attack, server
+   assumes f = 4), alpha 0.5, seed 0, 50 rounds, for tau in
+   {0.1, 0.3, 1, 3, 10}.
+2. In these runs (`--val_frac 0.1`), 10% of the training set (stratified by
+   class, fixed seed) is held out. Clients train on the other 90%, and
+   accuracy is measured on the held-out 10%. Result files carry
+   `"eval_split": "val"` and a `_val0.1` name tag.
+3. We select the **smallest tau whose validation accuracy is within 0.3
+   points of the best**: among radii that cost (almost) nothing on clean
+   data, the smallest one gives an attacker the least room.
+4. The choice is saved to `results_tune/cc_tau_<dataset>.json` and passed to
+   every sweep on that dataset with `--cc_tau`. Final runs train on the full
+   training set and report test accuracy.
+
+Note: one clean tuning setting (alpha 0.5, one seed) is a simplification;
+the selected tau is not re-tuned per alpha or per attack.
+
 ## Known limitations / TODO
 
-- Centered Clipping's radius `--cc_tau` should be tuned on clean runs first.
 - No client sampling, no adaptive attacks against specific defenses yet.
 - Add FLTrust (needs a small server dataset) and a text dataset.

@@ -32,6 +32,8 @@ def main():
     p.add_argument("--rounds", type=int, default=50)
     p.add_argument("--cc_tau", type=float, default=Config.cc_tau)
     p.add_argument("--local_steps", type=int, default=None)
+    p.add_argument("--val_frac", type=float, default=0.0,
+                   help="> 0: tuning mode, evaluate on held-out training data")
     p.add_argument("--shard", default="0/1",
                    help="i/N: run only every N-th grid point starting at i, so N "
                         "processes can split one grid without overlap")
@@ -55,7 +57,8 @@ def main():
             bf_run, f_srv = bf, None  # None = server knows the true f
         cfg = Config(dataset=ds, alpha=al, aggregator=ag, attack=at,
                      byz_frac=bf_run, f_assumed=f_srv, cc_tau=a.cc_tau,
-                     local_steps=a.local_steps, seed=sd, rounds=a.rounds,
+                     local_steps=a.local_steps, val_frac=a.val_frac,
+                     seed=sd, rounds=a.rounds,
                      device=a.device)
         path = out / f"{run_name(cfg)}.json"
         if path.exists():

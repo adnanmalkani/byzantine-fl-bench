@@ -9,7 +9,7 @@ import torch.nn.functional as F
 
 from .aggregators import check_valid, get_aggregator
 from .attacks import apply_attack
-from .data import dirichlet_partition, load_dataset
+from .data import dirichlet_partition, load_dataset, train_val_split
 from .models import build_model
 from .utils import flatten_params, get_device, load_flat_params, set_seed
 
@@ -33,6 +33,7 @@ class Config:
     gaussian_sigma: float = 1.0
     ipm_eps: float = 0.5
     eval_every: int = 5
+    val_frac: float = 0.0  # > 0: tuning mode, evaluate on held-out training data
     seed: int = 0
     device: str = "auto"
 
@@ -82,12 +83,18 @@ def run(cfg: Config, log=print) -> dict:
     f = int(round(cfg.byz_frac * n))
     f_srv = f if cfg.f_assumed is None else cfg.f_assumed
 
-    result = {"config": asdict(cfg), "f": f, "f_assumed": f_srv}
+    result = {"config": asdict(cfg), "f": f, "f_assumed": f_srv,
+              "eval_split": "val" if cfg.val_frac > 0 else "test"}
     err = check_valid(cfg.aggregator, n, f_srv)
     if err:
         return {**result, "status": "invalid", "reason": err}
 
     xtr, ytr, xte, yte, C = load_dataset(cfg.dataset)
+    if cfg.val_frac > 0:
+        # Tuning mode: clients train on the rest of the training data and
+        # "acc" is measured on the held-out part; the test set is never used
+        tr, va = train_val_split(ytr.numpy(), cfg.val_frac, cfg.seed)
+        xtr, ytr, xte, yte = xtr[tr], ytr[tr], xtr[va], ytr[va]
     parts = dirichlet_partition(ytr.numpy(), n, cfg.alpha, cfg.seed)
     rng = np.random.default_rng(cfg.seed)
     byz = set(rng.choice(n, f, replace=False).tolist()) if f else set()
