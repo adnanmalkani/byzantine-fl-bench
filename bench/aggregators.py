@@ -11,9 +11,17 @@ def fedavg(U, f=0):
     return U.mean(0)
 
 
+def _median(U):
+    # Per-coordinate median; for even n, the average of the two middle values
+    # (torch.median would return the lower one, a bias that matters at small n)
+    s = U.sort(0).values
+    n = U.shape[0]
+    return (s[(n - 1) // 2] + s[n // 2]) / 2
+
+
 def median(U, f=0):
     # Coordinate-wise median (Yin et al., 2018)
-    return U.median(0).values
+    return _median(U)
 
 
 def trimmed_mean(U, f=0):
@@ -59,7 +67,7 @@ def bulyan(U, f=0):
         remaining.remove(j)
     S = U[selected]
     beta = theta - 2 * f
-    med = S.median(0).values
+    med = _median(S)
     idx = (S - med).abs().argsort(0)[:beta]
     return S.gather(0, idx).mean(0)
 
@@ -105,6 +113,10 @@ AGGREGATORS = {
 def check_valid(name: str, n: int, f: int):
     """Return an error string if the rule's assumption on (n, f) is violated."""
     rules = {
+        # Median, geometric median and CC can only resist a minority of attackers
+        "median": (n > 2 * f, "needs n > 2f"),
+        "geomed": (n > 2 * f, "needs n > 2f"),
+        "cc": (n > 2 * f, "needs n > 2f"),
         "trimmed_mean": (n > 2 * f, "needs n > 2f"),
         "krum": (n > 2 * f + 2, "needs n > 2f + 2"),
         "multi_krum": (n > 2 * f + 2, "needs n > 2f + 2"),

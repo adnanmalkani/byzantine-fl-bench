@@ -8,7 +8,7 @@ import torch
 import torch.nn.functional as F
 
 from .aggregators import check_valid, get_aggregator
-from .attacks import apply_attack
+from .attacks import alie_z, apply_attack
 from .data import dirichlet_partition, load_dataset, train_val_split
 from .models import build_model
 from .utils import flatten_params, get_device, load_flat_params, set_seed
@@ -86,6 +86,12 @@ def run(cfg: Config, log=print) -> dict:
     result = {"config": asdict(cfg), "f": f, "f_assumed": f_srv,
               "eval_split": "val" if cfg.val_frac > 0 else "test"}
     err = check_valid(cfg.aggregator, n, f_srv)
+    if cfg.attack == "alie" and f:
+        # z = 0: ALIE sends the honest mean (no attack); z = inf: undefined
+        # or NaN (attackers are more than half the clients), so the run is invalid
+        z = result["alie_z"] = alie_z(n, f)
+        if not np.isfinite(z):
+            err = err or f"alie undefined: z = {z} (n={n}, f={f})"
     if err:
         return {**result, "status": "invalid", "reason": err}
 

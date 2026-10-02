@@ -7,7 +7,7 @@ def cell(df, n, f, rule):
 
 
 def test_validity_table():
-    df = build([4, 20], [0, 1])
+    df = build([4, 20], [0, 1, 2])
     assert cell(df, 4, 1, "bulyan").status == "invalid"        # needs n >= 4f + 3
     assert cell(df, 4, 1, "krum").status == "invalid"          # needs n > 2f + 2
     assert cell(df, 20, 1, "bulyan").status == "valid"
@@ -16,6 +16,8 @@ def test_validity_table():
     for rule in ("fedavg", "trimmed_mean", "multi_krum", "bulyan"):
         assert cell(df, 4, 0, rule).degenerate == "= mean", rule  # f=0: no trimming
     assert cell(df, 20, 1, "geomed").degenerate == ""
+    for rule in ("median", "geomed", "cc"):                     # needs n > 2f
+        assert cell(df, 4, 2, rule).status == "invalid", rule
     assert bool(cell(df, 4, 1, "fedavg").alie_degenerate)       # z = 0 at n=4, f=1
     assert not bool(cell(df, 20, 0, "fedavg").alie_degenerate)  # no attackers
 
