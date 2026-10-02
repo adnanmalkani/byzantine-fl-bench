@@ -12,8 +12,11 @@ from bench.fl import Config, run
 
 
 def run_name(cfg: Config) -> str:
-    return (f"{cfg.dataset}_a{cfg.alpha}_{cfg.aggregator}_{cfg.attack}"
-            f"_b{cfg.byz_frac}_s{cfg.seed}")
+    # Optional parts are added only when set, so names of default runs don't change
+    fa = "" if cfg.f_assumed is None else f"_fa{cfg.f_assumed}"
+    tau = f"_tau{cfg.cc_tau}" if cfg.aggregator == "cc" else ""
+    return (f"{cfg.dataset}_a{cfg.alpha}_{cfg.aggregator}{tau}_{cfg.attack}"
+            f"_b{cfg.byz_frac}{fa}_s{cfg.seed}")
 
 
 def main():

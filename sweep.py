@@ -30,6 +30,7 @@ def main():
     p.add_argument("--byz_fracs", type=csv(float), default=[0.2])
     p.add_argument("--seeds", type=csv(int), default=[0])
     p.add_argument("--rounds", type=int, default=50)
+    p.add_argument("--cc_tau", type=float, default=Config.cc_tau)
     p.add_argument("--device", default="auto")
     p.add_argument("--out", default="results")
     a = p.parse_args()
@@ -40,11 +41,14 @@ def main():
                                   a.attacks, a.byz_fracs, a.seeds))
     for k, (ds, al, ag, at, bf, sd) in enumerate(grid, 1):
         if at == "none" and bf > 0:
-            bf_run = 0.0  # clean baseline: no Byzantine clients
+            # Clean baseline: no Byzantine clients, but the server still
+            # defends against the f it would expect, showing the cost of robustness
+            bf_run, f_srv = 0.0, int(round(bf * Config.n_clients))
         else:
-            bf_run = bf
+            bf_run, f_srv = bf, None  # None = server knows the true f
         cfg = Config(dataset=ds, alpha=al, aggregator=ag, attack=at,
-                     byz_frac=bf_run, seed=sd, rounds=a.rounds, device=a.device)
+                     byz_frac=bf_run, f_assumed=f_srv, cc_tau=a.cc_tau,
+                     seed=sd, rounds=a.rounds, device=a.device)
         path = out / f"{run_name(cfg)}.json"
         if path.exists():
             continue

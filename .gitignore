@@ -3,3 +3,5 @@ results/
 summary.csv
 __pycache__/
 .venv/
+results_legacy/
+results_*/
