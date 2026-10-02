@@ -5,12 +5,10 @@ from typing import Optional
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 from .aggregators import check_valid, get_aggregator
 from .attacks import alie_z, apply_attack
-from .data import dirichlet_partition, load_dataset, train_val_split
-from .models import build_model
+from .tasks import PRESETS, load_task
 from .utils import flatten_params, get_device, load_flat_params, set_seed
 
 
@@ -29,6 +27,8 @@ class Config:
     lr: float = 0.05
     server_lr: float = 1.0
     f_assumed: Optional[int] = None  # None = server knows the true f
+    byz_ids: Optional[str] = None    # e.g. "0" or "1,3": fixed attackers (overrides byz_frac)
+    weighted: bool = False           # pass client sample sizes to the aggregator
     cc_tau: float = 1.0
     gaussian_sigma: float = 1.0
     ipm_eps: float = 0.5
@@ -58,29 +58,32 @@ def _batches(n, cfg, gen, device):
                 return
 
 
-def _train(model, x, y, cfg, gen, device):
+def make_config(**kw) -> Config:
+    """Config with the dataset's preset defaults (tasks.PRESETS); explicitly
+    passed values win over the preset."""
+    return Config(**{**PRESETS.get(kw.get("dataset", Config.dataset), {}), **kw})
+
+
+def _train(model, x, y, cfg, gen, device, loss_fn):
     opt = torch.optim.SGD(model.parameters(), lr=cfg.lr)
     model.train()
     for b in _batches(len(y), cfg, gen, device):
-        loss = F.cross_entropy(model(x[b]), y[b])
+        loss = loss_fn(model(x[b]), y[b])
         opt.zero_grad()
         loss.backward()
         opt.step()
-
-
-@torch.no_grad()
-def _evaluate(model, x, y, bs=1000):
-    model.eval()
-    correct = sum((model(x[i:i + bs]).argmax(1) == y[i:i + bs]).sum().item()
-                  for i in range(0, len(y), bs))
-    return correct / len(y)
 
 
 def run(cfg: Config, log=print) -> dict:
     set_seed(cfg.seed)
     device = get_device(cfg.device)
     n = cfg.n_clients
-    f = int(round(cfg.byz_frac * n))
+    if cfg.byz_ids:
+        byz_fixed = sorted({int(i) for i in cfg.byz_ids.split(",")})
+        assert all(0 <= i < n for i in byz_fixed), cfg.byz_ids
+        f = len(byz_fixed)
+    else:
+        byz_fixed, f = None, int(round(cfg.byz_frac * n))
     f_srv = f if cfg.f_assumed is None else cfg.f_assumed
 
     result = {"config": asdict(cfg), "f": f, "f_assumed": f_srv,
@@ -95,34 +98,36 @@ def run(cfg: Config, log=print) -> dict:
     if err:
         return {**result, "status": "invalid", "reason": err}
 
-    xtr, ytr, xte, yte, C = load_dataset(cfg.dataset)
-    if cfg.val_frac > 0:
-        # Tuning mode: clients train on the rest of the training data and
-        # "acc" is measured on the held-out part; the test set is never used
-        tr, va = train_val_split(ytr.numpy(), cfg.val_frac, cfg.seed)
-        xtr, ytr, xte, yte = xtr[tr], ytr[tr], xtr[va], ytr[va]
-    parts = dirichlet_partition(ytr.numpy(), n, cfg.alpha, cfg.seed)
-    rng = np.random.default_rng(cfg.seed)
-    byz = set(rng.choice(n, f, replace=False).tolist()) if f else set()
+    task = load_task(cfg, device)
+    C = task.num_classes
+    if byz_fixed is not None:
+        byz = set(byz_fixed)
+    else:
+        rng = np.random.default_rng(cfg.seed)
+        byz = set(rng.choice(n, f, replace=False).tolist()) if f else set()
+    sizes = [len(y) for _, y in task.clients]
+    result.update(byz_ids=sorted(byz), client_names=task.client_names,
+                  client_sizes=sizes)
 
-    xtr, ytr, xte, yte = (t.to(device) for t in (xtr, ytr, xte, yte))
-    parts = [torch.as_tensor(p, device=device) for p in parts]
-    in_ch, img = xtr.shape[1], xtr.shape[2]
-    model = build_model(in_ch, img, C).to(device)
-    worker = build_model(in_ch, img, C).to(device)
+    model = task.build_model()
+    worker = task.build_model()
     g = flatten_params(model)
     agg = get_aggregator(cfg.aggregator, cc_tau=cfg.cc_tau)
     gen = torch.Generator().manual_seed(cfg.seed)
 
     history, t0 = [], time.time()
+    # Rows of U are honest clients first, then Byzantine ones; `order` maps
+    # each row back to its client id (for weights and per-client logging)
+    order = [i for i in range(n) if i not in byz] + [i for i in range(n) if i in byz]
+    w = torch.tensor([float(sizes[i]) for i in order]) if cfg.weighted else None
     for r in range(cfg.rounds):
         honest, byz_own = [], []
         for i in range(n):
-            y_i = ytr[parts[i]]
+            x_i, y_i = task.clients[i]
             if i in byz and cfg.attack == "label_flip":
                 y_i = C - 1 - y_i
             load_flat_params(worker, g)
-            _train(worker, xtr[parts[i]], y_i, cfg, gen, device)
+            _train(worker, x_i, y_i, cfg, gen, device, task.loss)
             u = (flatten_params(worker) - g).cpu()
             (byz_own if i in byz else honest).append(u)
 
@@ -134,15 +139,20 @@ def run(cfg: Config, log=print) -> dict:
         else:
             U = H
 
-        update = agg(U, f=f_srv)
+        update = agg(U, f=f_srv) if w is None else agg(U, f=f_srv, w=w)
         g = g + cfg.server_lr * update.to(device)
 
         if (r + 1) % cfg.eval_every == 0 or r == cfg.rounds - 1:
             load_flat_params(model, g)
-            acc = _evaluate(model, xte, yte)
-            history.append({"round": r + 1, "acc": acc})
-            log(f"round {r + 1:4d}  acc {acc:.4f}  ({time.time() - t0:.0f}s)")
+            h = {"round": r + 1, "acc": task.metric(model, *task.test)}
+            if task.client_tests:
+                h["client_acc"] = [task.metric(model, *t) for t in task.client_tests]
+                h["worst_acc"] = min(h["client_acc"])
+                h["gap"] = max(h["client_acc"]) - h["worst_acc"]
+            history.append(h)
+            log(f"round {r + 1:4d}  acc {h['acc']:.4f}  ({time.time() - t0:.0f}s)")
 
     last = [h["acc"] for h in history[-3:]]
     return {**result, "status": "ok", "final_acc": float(np.mean(last)),
-            "history": history, "seconds": round(time.time() - t0, 1)}
+            "last_acc": history[-1]["acc"], "history": history,
+            "seconds": round(time.time() - t0, 1)}
