@@ -132,7 +132,8 @@ def run(cfg: Config, log=print) -> dict:
         byz = set(rng.choice(n, f, replace=False).tolist()) if f else set()
     sizes = [len(y) for _, y in task.clients]
     result.update(byz_ids=sorted(byz), client_names=task.client_names,
-                  client_sizes=sizes)
+                  client_sizes=sizes,
+                  client_test_sizes=[len(y) for _, y in task.client_tests or []])
 
     model = task.build_model()
     worker = task.build_model()

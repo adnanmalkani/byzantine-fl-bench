@@ -64,9 +64,13 @@ python sweep.py --datasets mnist --alphas 0.1,0.5,100 \
 python summarize.py results      # mean and 95% CI -> results_tables/summary_results{,_pooled}.csv
 ```
 
-Summaries average every metric over the last 3 evaluations. Natural splits
-add the worst hospital, the worst *honest* hospital (attackers' own test
-sets excluded) and the best-worst gap. ALIE runs with z = 0 (n = 4, 6 or 20
+Summaries average every metric over the last 3 evaluations. On natural
+splits the main metrics are `avg_acc` (accuracy over all hospitals' test
+patients, each hospital with its own normalisation = sample-weighted mean of
+per-hospital accuracies) and `worst_honest_acc` (worst non-attacker
+hospital); `worst_acc` (attackers included) and the best-worst `gap` are
+appendix metrics. FLamby's pooled-test metric appears only in the
+reproduction scripts. ALIE runs with z = 0 (n = 4, 6 or 20
 with f = 1) are flagged `degenerate`: the attackers send the mean of the
 benign updates, so they are kept apart from real attacks.
 

@@ -5,12 +5,14 @@ All metrics are means over the last 3 evaluations (summarize.run_metrics);
 
 Tables (results_tables/):
   heart_attacker_f1.csv        f = 1: rule x weighting x attack x attacker
-                               hospital -> pooled accuracy, worst hospital,
-                               worst honest hospital. Includes a clean
+                               hospital -> average accuracy (sample-weighted
+                               over hospitals), worst honest hospital (main),
+                               worst hospital incl. attacker (appendix). Includes a clean
                                reference (f_assumed = 1) and the mean over the
                                real attacks (per seed, then CI). ALIE at n = 4,
                                f = 1 has z = 0 and is marked degenerate.
-  heart_attacker_f1_wide.csv   the same, one column per attacker hospital
+  heart_attacker_f1_wide.csv   avg + worst honest, one column per attacker hospital
+  heart_attacker_f1_wide_appendix.csv   worst hospital incl. the attacker
   heart_exclusion_fa1.csv      clean runs, f_assumed = 1: per rule x weighting x
                                hospital, how much the rule down-weights it
   heart_exclusion_size_corr.csv  Spearman rho between hospital size and
@@ -34,6 +36,7 @@ Usage: python analyze_heart.py [--folder results_heart] [--rebuild]
 import argparse
 import json
 import os
+from functools import partial
 from multiprocessing import Pool
 from pathlib import Path
 
@@ -42,7 +45,7 @@ import pandas as pd
 from scipy import stats
 
 from bench.plotstyle import GRID, INK, MUTED, RULE_COLORS, RULE_LABELS, plt, save
-from summarize import ci95, is_degenerate, run_metrics
+from summarize import ci95, client_test_sizes, is_degenerate, run_metrics
 
 OUT = Path("results_tables")
 HOSPITALS = ["Cleveland", "Hungary", "Switzerland", "VA"]
@@ -92,7 +95,7 @@ def influence(r: dict):
     return rel.mean(0), rate.mean(0), (rel < 1 - 1e-6).mean(0), dist.mean(0)
 
 
-def _extract(path):
+def _extract(path, test_sizes=None):
     r = json.loads(Path(path).read_text())
     if r.get("eval_split", "test") != "test":
         return None
@@ -102,7 +105,7 @@ def _extract(path):
                attacker=c["byz_ids"] or "-", status=r["status"], degenerate=is_degenerate(r))
     if r["status"] != "ok":
         return row
-    m = run_metrics(r)
+    m = run_metrics(r, test_sizes=test_sizes)
     for i, a in enumerate(m.pop("client_acc")):
         row[f"acc_{i}"] = a
     row.update(m, sizes=r["client_sizes"])
@@ -120,7 +123,8 @@ def collect(folder: Path, rebuild=False) -> pd.DataFrame:
         return pd.read_pickle(cache)
     print(f"parsing {len(files)} result files ...")
     with Pool(os.cpu_count()) as pool:
-        rows = [x for x in pool.map(_extract, files, chunksize=64) if x is not None]
+        work = partial(_extract, test_sizes=client_test_sizes("fed_heart_disease"))
+        rows = [x for x in pool.map(work, files, chunksize=64) if x is not None]
     df = pd.DataFrame(rows)
     OUT.mkdir(exist_ok=True)
     df.to_pickle(cache)
@@ -135,7 +139,7 @@ def mean_ci(x):
 
 def attacker_table(df: pd.DataFrame) -> pd.DataFrame:
     """f = 1: one row per rule x weighting x attack x attacker hospital."""
-    metrics = ["final_acc", "worst_acc", "worst_honest_acc"]
+    metrics = ["avg_acc", "worst_honest_acc", "worst_acc"]
     rows = []
 
     def add(g, attack, attacker, degenerate):
@@ -175,17 +179,17 @@ def attacker_table(df: pd.DataFrame) -> pd.DataFrame:
     return t.reset_index(drop=True)
 
 
-def wide(t: pd.DataFrame) -> pd.DataFrame:
+def wide(t: pd.DataFrame, metrics=("avg_acc", "worst_honest_acc")) -> pd.DataFrame:
     """Cells 'mean ± ci' (points), columns: metric x attacker hospital."""
     t = t[t.attacker != "-"].copy()
-    for m in ["final_acc", "worst_honest_acc", "worst_acc"]:
+    metrics = list(metrics)
+    for m in metrics:
         t[m] = [("invalid" if s == "invalid" else f"{a:.1f} ± {c:.1f}")
                 for s, a, c in zip(t.status, t[f"{m}_mean"], t[f"{m}_ci95"])]
     t["attack"] = t.attack + np.where(t.degenerate, " (degenerate, z=0)", "")
     w = t.pivot_table(index=["aggregator", "weighted", "attack"], columns="attacker",
-                      values=["final_acc", "worst_honest_acc", "worst_acc"], aggfunc="first")
-    return w.reindex(columns=pd.MultiIndex.from_product(
-        [["final_acc", "worst_honest_acc", "worst_acc"], HOSPITALS]))
+                      values=metrics, aggfunc="first")
+    return w.reindex(columns=pd.MultiIndex.from_product([metrics, HOSPITALS]))
 
 
 def exclusion_table(df: pd.DataFrame):
@@ -265,7 +269,7 @@ def fig_avg_vs_worst(df: pd.DataFrame, f_assumed=1):
     groups = sorted(clean.groupby(["aggregator", "weighted"]), key=lambda kv: (order[kv[0][0]], kv[0][1]))
     # draw in reverse rule order, so where rules coincide the first rule's colour is on top
     for (agg, wt), g in reversed(groups):
-        (x, xc), (y, yc) = mean_ci(g.final_acc * 100), mean_ci(g.worst_acc * 100)
+        (x, xc), (y, yc) = mean_ci(g.avg_acc * 100), mean_ci(g.worst_acc * 100)
         pts.append((agg, wt, x, y))
         ax.errorbar(x, y, xerr=xc, yerr=yc, fmt="none", ecolor=RULE_COLORS[agg],
                     elinewidth=1, alpha=0.6, zorder=2)
@@ -286,7 +290,7 @@ def fig_avg_vs_worst(df: pd.DataFrame, f_assumed=1):
                  ha="left", va="top", wrap=True)
     ax.grid(color=GRID, linewidth=0.6)
     ax.set_axisbelow(True)
-    ax.set_xlabel("Average accuracy, pooled test set (%)")
+    ax.set_xlabel("Average accuracy over all hospitals' test patients (%)")
     ax.set_ylabel("Worst-hospital accuracy (%)")
     ax.set_title(f"Fed-Heart-Disease, no attack, server assumes f = {f_assumed}",
                  loc="left", fontsize=9, color=MUTED)
@@ -310,12 +314,13 @@ def main():
     t = attacker_table(df)
     t.to_csv(OUT / "heart_attacker_f1.csv", index=False)
     wide(t).to_csv(OUT / "heart_attacker_f1_wide.csv")
+    wide(t, ["worst_acc"]).to_csv(OUT / "heart_attacker_f1_wide_appendix.csv")
     ex, corr = exclusion_table(df)
     ex.to_csv(OUT / "heart_exclusion_fa1.csv", index=False)
     corr.to_csv(OUT / "heart_exclusion_size_corr.csv", index=False)
     fig_avg_vs_worst(df, 1)
     fig_avg_vs_worst(df, 0)
-    print("saved heart_attacker_f1{,_wide}.csv, heart_exclusion_fa1.csv, "
+    print("saved heart_attacker_f1{,_wide,_wide_appendix}.csv, heart_exclusion_fa1.csv, "
           "heart_exclusion_size_corr.csv, fig_heart_avg_vs_worst_fa{0,1}.{png,pdf} "
           f"in {OUT}/")
 

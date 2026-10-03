@@ -24,13 +24,18 @@ def test_run_metrics_last3_and_honest_worst():
     hist = [{"acc": a, "client_acc": c} for a, c in [
         (0.1, [0.0, 0.0, 0.0]),                       # dropped: only the last 3 count
         (0.6, [0.9, 0.5, 0.2]), (0.7, [0.8, 0.6, 0.3]), (0.8, [0.7, 0.7, 0.4])]]
-    m = run_metrics({"history": hist, "byz_ids": [2]})
-    assert math.isclose(m["final_acc"], 0.7)
+    m = run_metrics({"history": hist, "byz_ids": [2], "client_test_sizes": [10, 30, 60]})
+    assert "final_acc" not in m                        # natural splits: avg_acc instead
+    # patient-weighted: (10*0.8 + 30*0.6 + 60*0.3) / 100 over the last 3 evals
+    assert math.isclose(m["avg_acc"], (8 + 18 + 18) / 100)
     assert math.isclose(m["worst_acc"], 0.3)          # hospital 2 (the attacker)
     assert math.isclose(m["worst_honest_acc"], 0.6)   # min over hospitals 0, 1 per eval
     assert math.isclose(m["gap"], (0.7 + 0.5 + 0.3) / 3)
     assert np.allclose(m["client_acc"], [0.8, 0.6, 0.3])
-    assert "worst_acc" not in run_metrics({"history": [{"acc": 0.5}]})   # image datasets
+    img = run_metrics({"history": [{"acc": 0.5}]})                       # image datasets
+    assert img == {"final_acc": 0.5}
+    m2 = run_metrics({"history": hist, "byz_ids": []}, test_sizes=[1, 1, 1])
+    assert math.isclose(m2["avg_acc"], (0.8 + 0.6 + 0.3) / 3)
 
 
 def test_influence_per_rule():
@@ -64,14 +69,14 @@ def test_attacker_table_pools_attacks_per_seed():
         for attack, acc in (("sign_flip", 0.5), ("ipm", 0.7), ("alie", 0.9)):
             rows.append(dict(aggregator="median", weighted=False, attack=attack, f=1,
                              f_assumed=1, seed=seed, attacker="2", status="ok",
-                             degenerate=attack == "alie", final_acc=acc + 0.1 * seed,
+                             degenerate=attack == "alie", avg_acc=acc + 0.1 * seed,
                              worst_acc=acc, worst_honest_acc=acc))
         rows.append(dict(aggregator="krum", weighted=False, attack="ipm", f=1, f_assumed=1,
                          seed=seed, attacker="2", status="invalid", degenerate=False))
     t = attacker_table(pd.DataFrame(rows))
     pooled = t[(t.aggregator == "median") & (t.attack == "mean of real attacks")].iloc[0]
     assert pooled.attacker == "Switzerland" and pooled.n_seeds == 2
-    assert math.isclose(pooled.final_acc_mean, 65.0)    # alie (degenerate) not pooled
+    assert math.isclose(pooled.avg_acc_mean, 65.0)    # alie (degenerate) not pooled
     alie = t[(t.aggregator == "median") & (t.attack == "alie")].iloc[0]
     assert bool(alie.degenerate)
     assert (t[t.aggregator == "krum"].status == "invalid").all()

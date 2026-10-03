@@ -6,10 +6,15 @@
   results_tables/summary_<folder>_pooled.csv   same, pooled over attacker
                                                identities
 
-Metrics, each the mean over the last 3 evaluations (as final_acc):
-  final_acc         global test accuracy (pooled test set for natural splits)
-  worst_acc         lowest per-hospital test accuracy (natural splits)
-  worst_honest_acc  lowest over hospitals that are not attackers
+Metrics, each the mean over the last 3 evaluations:
+  final_acc         global test accuracy (image datasets only)
+  avg_acc           natural splits: sample-weighted mean of the per-hospital
+                    test accuracies (each hospital with its own normalisation),
+                    i.e. accuracy over all hospitals' test patients. FLamby's
+                    pooled-test metric is used only in the reproduction scripts.
+  worst_honest_acc  lowest per-hospital accuracy over non-attacker hospitals
+                    (main worst-hospital metric)
+  worst_acc         lowest over all hospitals, attackers included (appendix)
   gap               best minus worst per-hospital accuracy
 95% CI uses the t distribution over runs (seeds, or seeds x attacker sets
 when pooled). Tuning runs (evaluated on a validation split) are skipped.
@@ -23,6 +28,7 @@ Usage: python summarize.py [results_dir]
 """
 import json
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -31,7 +37,7 @@ from scipy import stats
 
 KEYS = ["dataset", "alpha", "rounds", "attack", "degenerate", "byz_frac", "f",
         "f_assumed", "aggregator", "weighted", "cc_tau"]
-METRICS = ["final_acc", "worst_acc", "worst_honest_acc", "gap"]
+METRICS = ["final_acc", "avg_acc", "worst_honest_acc", "worst_acc", "gap"]
 LAST = 3  # evaluations averaged for every metric
 
 
@@ -40,14 +46,34 @@ def is_degenerate(r: dict) -> bool:
     return r["config"]["attack"] == "alie" and abs(r.get("alie_z", 1.0)) < 1e-9
 
 
-def run_metrics(r: dict, last: int = LAST) -> dict:
-    """Per-run metrics, each averaged over the last `last` evaluations."""
+@lru_cache
+def client_test_sizes(dataset: str) -> tuple:
+    """Per-hospital test-set sizes, for results written before run() stored them."""
+    import torch
+
+    from bench.fl import make_config
+    from bench.tasks import load_task
+    task = load_task(make_config(dataset=dataset), torch.device("cpu"))
+    return tuple(len(y) for _, y in task.client_tests)
+
+
+def run_metrics(r: dict, last: int = LAST, test_sizes=None) -> dict:
+    """Per-run metrics, each averaged over the last `last` evaluations.
+    Natural splits: avg_acc replaces final_acc (FLamby's pooled test set)."""
     hist = r["history"][-last:]
     out = {"final_acc": float(np.mean([h["acc"] for h in hist]))}
     if "client_acc" in hist[0]:
         C = np.array([h["client_acc"] for h in hist])           # evals x hospitals
+        if test_sizes is None:
+            test_sizes = r.get("client_test_sizes")
+        if test_sizes is None:
+            assert r.get("eval_split", "test") == "test"
+            test_sizes = client_test_sizes(r["config"]["dataset"])
+        n = np.asarray(test_sizes, dtype=float)
         honest = [i for i in range(C.shape[1]) if i not in r.get("byz_ids", [])]
-        out.update(worst_acc=C.min(1).mean(), worst_honest_acc=C[:, honest].min(1).mean(),
+        del out["final_acc"]
+        out.update(avg_acc=float((C @ n / n.sum()).mean()),
+                   worst_honest_acc=C[:, honest].min(1).mean(), worst_acc=C.min(1).mean(),
                    gap=(C.max(1) - C.min(1)).mean(), client_acc=C.mean(0).tolist())
     return out
 
