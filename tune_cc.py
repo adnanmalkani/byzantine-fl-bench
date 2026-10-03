@@ -36,7 +36,7 @@ import pandas as pd
 from scipy import stats
 
 from bench.fl import make_config, run
-from run import _bool, run_name
+from run import _bool, result_path
 from sweep import csv
 
 EARLY_ROUNDS = 10
@@ -124,7 +124,7 @@ def main():
     dists = []
     for sd in a.seeds:
         cfg = make_config(aggregator="fedavg", seed=sd, rounds=EARLY_ROUNDS, **base)
-        res = _run_or_load(cfg, out / "tau0" / f"{run_name(cfg)}.json", k % shard_n == shard_i)
+        res = _run_or_load(cfg, result_path(out / "tau0", cfg), k % shard_n == shard_i)
         k += 1
         if res:
             dists += [x for d in res["diag"][1:EARLY_ROUNDS] for x in d["dist_prev"]]
@@ -144,7 +144,7 @@ def main():
         for tau in grid:
             for sd in a.seeds:
                 cfg = make_config(aggregator="cc", cc_tau=tau, weighted=wt, seed=sd, **base)
-                res = _run_or_load(cfg, out / f"{run_name(cfg)}.json", k % shard_n == shard_i)
+                res = _run_or_load(cfg, result_path(out, cfg), k % shard_n == shard_i)
                 k += 1
                 if res:
                     acc.setdefault("weighted" if wt else "unweighted", {}) \

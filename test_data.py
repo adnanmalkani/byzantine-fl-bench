@@ -44,6 +44,25 @@ def test_run_names_tag_tuning_runs():
     assert "_val" not in run_name(Config())
 
 
+def test_round_count_in_names_and_legacy_files():
+    import json
+    import tempfile
+    from pathlib import Path
+
+    from bench.fl import make_config
+    from run import result_path
+    a = make_config(dataset="fed_heart_disease", rounds=106)
+    b = make_config(dataset="fed_heart_disease", rounds=15)
+    assert "_r106_" in run_name(a) and run_name(a) != run_name(b)
+    out = Path(tempfile.mkdtemp())
+    legacy = out / f"{run_name(a, rounds=False)}.json"     # old format, no round count
+    legacy.write_text(json.dumps({"config": {"rounds": 106}}))
+    assert result_path(out, b) == out / f"{run_name(b)}.json"
+    assert legacy.exists() and not result_path(out, b).exists()  # 15 rounds: never reused
+    p = result_path(out, a)                                 # 106 rounds: adopted
+    assert p.exists() and not legacy.exists() and p.name == f"{run_name(a)}.json"
+
+
 def test_val_mode_end_to_end():
     res = run(Config(dataset="synthetic", rounds=1, val_frac=0.1, device="cpu"),
               log=lambda *_: None)
@@ -57,5 +76,6 @@ if __name__ == "__main__":
     test_tau_rule_v2_ladder()
     test_tau_rule_v2_decision()
     test_run_names_tag_tuning_runs()
+    test_round_count_in_names_and_legacy_files()
     test_val_mode_end_to_end()
     print("all tests passed")

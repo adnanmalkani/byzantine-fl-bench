@@ -17,7 +17,7 @@ from pathlib import Path
 
 from bench.design import attacker_sets
 from bench.fl import make_config, run
-from run import _bool, run_name
+from run import _bool, result_path
 
 
 def csv(t):
@@ -82,7 +82,7 @@ def main():
         if (k - 1) % shard_n != shard_i:
             continue
         cfg = make_config(val_frac=a.val_frac, **opt, **kw)
-        path = out / f"{run_name(cfg)}.json"
+        path = result_path(out, cfg)
         if path.exists():
             continue
         print(f"[{k}/{len(grid)}] {path.stem}")
