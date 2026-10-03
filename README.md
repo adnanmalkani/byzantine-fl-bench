@@ -156,6 +156,14 @@ Setup: `sh setup_flamby.sh`, then download the data with FLamby's script
 - **Attackers:** enumerated, not random (`sweep.py --fs`): every hospital for
   f = 1, every pair for f = 2; each run records `byz_ids`.
 - **Seeds:** 20. `summarize.py` reports means with 95% CIs.
+- **Seeding fix (2026-10-04):** FLamby calls `torch.manual_seed(42)` when
+  imported. It used to be imported lazily inside the first heart run of each
+  process, after that run was seeded, so that run started from the seed-42
+  model. Fixed in `bench/tasks.py` (FLamby is imported at module load) with a
+  regression test. Affected and re-run: 4 grid runs (unweighted FedAvg,
+  clean, f = 0, seeds 0-3: the first run of each shard), 3 tuning runs and
+  convergence seed 0. tau (0.03), R* (106) and the FLamby reproduction did
+  not change. Old files: `results_legacy/first_run_bug/`.
 
 ## Aggregator diagnostics
 
