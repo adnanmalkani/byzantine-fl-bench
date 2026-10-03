@@ -105,6 +105,35 @@ tuned separately for each dataset, and never on the test set:
 Note: one clean tuning setting (alpha 0.5, one seed) is a simplification;
 the selected tau is not re-tuned per alpha or per attack.
 
+## Fed-Heart-Disease (FLamby, natural splits)
+
+Setup: `sh setup_flamby.sh`, then download the data with FLamby's script
+(asks you to accept the UCI licence) into `data/flamby/fed_heart_disease`.
+
+- **Local training:** FLamby's FedAvg settings (logistic regression, SGD lr
+  0.001, batch 4, 100 local steps per round); CPU. `reproduce_flamby_heart.py`
+  reproduces FLamby's published FedAvg baseline (pooled accuracy 0.748 +/-
+  0.027 at FLamby's 15 rounds, seeds 42-46).
+- **Rounds: 106** (main setting); FLamby's 15 rounds is a secondary setting.
+  Chosen by `convergence_heart.py` on the pooled validation set (10%
+  stratified holdout per hospital), 20 seeds, with the rule fixed in advance:
+  the smallest round after which mean validation accuracy never drops more
+  than 0.5 points below its mean over rounds 151-200. Validation loss is at
+  its minimum at the same point (round 89-106).
+- **Normalisation:** each hospital's train and test data use that hospital's
+  training statistics; FLamby's pooled test set uses pooled training
+  statistics (a FLamby convention we keep for comparability).
+- **Attackers:** enumerated, not random (`sweep.py --fs`): every hospital for
+  f = 1, every pair for f = 2; each run records `byz_ids`.
+- **Seeds:** 20. `summarize.py` reports means with 95% CIs.
+
+## Aggregator diagnostics
+
+Every run stores `diag`: per round, per client id, who the rule kept or
+suppressed (Krum/Multi-Krum selections, share of coordinates trimmed or
+kept, the share of the median each client determines, geometric-median
+weights, CC clip events and factors). See `bench/aggregators.py`.
+
 ## Known limitations / TODO
 
 - No client sampling, no adaptive attacks against specific defenses yet.
