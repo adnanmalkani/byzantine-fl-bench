@@ -74,6 +74,31 @@ def _train(model, x, y, cfg, gen, device, loss_fn):
         opt.step()
 
 
+@torch.no_grad()
+def _eval_loss(model, loss_fn, x, y, bs=1000):
+    # Mean loss over the evaluation set, in batches
+    model.eval()
+    total = sum(loss_fn(model(x[i:i + bs]), y[i:i + bs]).item() * len(y[i:i + bs])
+                for i in range(0, len(y), bs))
+    return total / len(y)
+
+
+def _by_client(info, order):
+    """Re-index aggregator diagnostics from rows of U to client ids:
+    per-row lists become lists indexed by client id; selected row indices
+    become client ids."""
+    out = {}
+    for k, v in info.items():
+        if k == "selected":
+            out[k] = sorted(order[j] for j in v)
+        else:
+            col = [None] * len(order)
+            for j, x in enumerate(v):
+                col[order[j]] = x
+            out[k] = col
+    return out
+
+
 def run(cfg: Config, log=print) -> dict:
     set_seed(cfg.seed)
     device = get_device(cfg.device)
@@ -120,6 +145,7 @@ def run(cfg: Config, log=print) -> dict:
     # each row back to its client id (for weights and per-client logging)
     order = [i for i in range(n) if i not in byz] + [i for i in range(n) if i in byz]
     w = torch.tensor([float(sizes[i]) for i in order]) if cfg.weighted else None
+    diag = []  # per round: aggregator diagnostics, indexed by client id
     for r in range(cfg.rounds):
         honest, byz_own = [], []
         for i in range(n):
@@ -139,12 +165,15 @@ def run(cfg: Config, log=print) -> dict:
         else:
             U = H
 
-        update = agg(U, f=f_srv) if w is None else agg(U, f=f_srv, w=w)
+        info = {}
+        update = agg(U, f=f_srv, w=w, info=info)
         g = g + cfg.server_lr * update.to(device)
+        diag.append(_by_client(info, order))
 
         if (r + 1) % cfg.eval_every == 0 or r == cfg.rounds - 1:
             load_flat_params(model, g)
-            h = {"round": r + 1, "acc": task.metric(model, *task.test)}
+            h = {"round": r + 1, "acc": task.metric(model, *task.test),
+                 "loss": _eval_loss(model, task.loss, *task.test)}
             if task.client_tests:
                 h["client_acc"] = [task.metric(model, *t) for t in task.client_tests]
                 h["worst_acc"] = min(h["client_acc"])
@@ -154,5 +183,5 @@ def run(cfg: Config, log=print) -> dict:
 
     last = [h["acc"] for h in history[-3:]]
     return {**result, "status": "ok", "final_acc": float(np.mean(last)),
-            "last_acc": history[-1]["acc"], "history": history,
+            "last_acc": history[-1]["acc"], "history": history, "diag": diag,
             "seconds": round(time.time() - t0, 1)}

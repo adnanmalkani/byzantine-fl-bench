@@ -1,7 +1,8 @@
 """Reproduce FLamby's published FedAvg baseline on Fed-Heart-Disease.
 
 Our side: sample-weighted FedAvg with FLamby's settings (tasks.PRESETS:
-logistic regression, SGD lr 0.001, batch 4, 100 local steps, 15 rounds),
+logistic regression, SGD lr 0.001, batch 4, 100 local steps) and FLamby's
+15 rounds,
 FLamby's seeds 42-46, last-round accuracy (as FLamby reports).
 Their side: method "FedAvg100" in FLamby's results CSVs (same seeds).
 Not bit-identical by design (different data order and init order), so we
@@ -28,7 +29,7 @@ def ours():
     rows = []
     for s in SEEDS:
         r = run(make_config(dataset="fed_heart_disease", aggregator="fedavg",
-                            weighted=True, seed=s), log=lambda *_: None)
+                            weighted=True, rounds=15, seed=s), log=lambda *_: None)
         last = r["history"][-1]
         rows.append([last["acc"], *last["client_acc"]])
     return np.array(rows)

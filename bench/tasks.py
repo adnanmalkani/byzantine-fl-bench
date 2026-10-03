@@ -18,11 +18,13 @@ from .models import build_model
 FLAMBY = {"fed_heart_disease": 4}  # dataset -> number of hospitals
 
 # Per-dataset defaults, applied by make_config unless overridden explicitly.
-# fed_heart_disease follows FLamby's FedAvg benchmark: SGD lr 0.001, batch 4,
-# 100 local steps per round, 15 rounds = (486 // 4 // 4) * 50 // 100.
+# fed_heart_disease uses FLamby's FedAvg local settings (SGD lr 0.001, batch 4,
+# 100 local steps per round). Rounds: 106, where FedAvg's pooled validation
+# accuracy plateaus (convergence_heart.py); FLamby's own 15 rounds
+# (= (486 // 4 // 4) * 50 // 100) is kept as a secondary setting.
 PRESETS = {
     "fed_heart_disease": dict(n_clients=4, lr=0.001, batch_size=4,
-                              local_steps=100, rounds=15, eval_every=1,
+                              local_steps=100, rounds=106, eval_every=1,
                               device="cpu"),  # tiny model: CPU beats MPS
 }
 
@@ -77,9 +79,6 @@ def _image_task(cfg, device):
 def _heart_task(cfg, device, root="./data/flamby/fed_heart_disease"):
     from flamby.datasets.fed_heart_disease import Baseline, FedHeartDisease
 
-    if cfg.val_frac > 0:
-        raise NotImplementedError("validation split not implemented for FLamby tasks yet")
-
     def tensors(**kw):
         ds = FedHeartDisease(data_path=root, **kw)
         xs, ys = zip(*(ds[i] for i in range(len(ds))))
@@ -87,10 +86,22 @@ def _heart_task(cfg, device, root="./data/flamby/fed_heart_disease"):
 
     n = FLAMBY[cfg.dataset]
     clients = [tensors(center=c, train=True) for c in range(n)]
-    client_tests = [tensors(center=c, train=False) for c in range(n)]
-    # As in FLamby's benchmark, the pooled test set is normalised with pooled
-    # training statistics (clients use their own centre's statistics)
-    pooled = tensors(train=False, pooled=True)
+    if cfg.val_frac > 0:
+        # Tuning mode: hold out a stratified val_frac of each hospital's
+        # training data; the metric is measured on the pooled held-out samples
+        # (each normalised with its own hospital's statistics, as clients see
+        # them). The test sets are never loaded.
+        client_tests = []
+        for c, (x, y) in enumerate(clients):
+            tr, va = train_val_split(y.cpu().numpy().ravel(), cfg.val_frac, cfg.seed + c)
+            tr, va = torch.as_tensor(tr, device=device), torch.as_tensor(va, device=device)
+            clients[c], client_tests = (x[tr], y[tr]), client_tests + [(x[va], y[va])]
+        pooled = tuple(torch.cat(t) for t in zip(*client_tests))
+    else:
+        client_tests = [tensors(center=c, train=False) for c in range(n)]
+        # As in FLamby's benchmark, the pooled test set is normalised with pooled
+        # training statistics (clients use their own centre's statistics)
+        pooled = tensors(train=False, pooled=True)
     return Task(clients=clients, test=pooled, client_tests=client_tests,
                 build_model=lambda: Baseline().to(device),
                 loss=F.binary_cross_entropy, metric=_binary_accuracy, num_classes=2,

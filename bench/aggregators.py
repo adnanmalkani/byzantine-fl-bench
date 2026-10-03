@@ -9,6 +9,19 @@ and trimming are unchanged; only the final averaging step uses the weights,
 so "weighting" and "outlier suppression" can be studied separately. Krum
 selects a single update, so its weighted variant is identical. w=None gives
 the unweighted rules exactly as before.
+
+Diagnostics: pass info={} and the rule records, per row of U, who it kept or
+suppressed (never changing its output):
+  fedavg        weights      averaging weight of each row (sums to 1)
+  median        used_share   share of the output each row determines
+                             (two middle values count 1/2 each)
+  trimmed_mean  trimmed_share  share of coordinates where the row was trimmed
+  krum          selected     the selected row
+  multi_krum    selected     the n - f selected rows
+  bulyan        selected, kept_share   Krum-stage rows; share of coordinates
+                             where the row survives the final trimming
+  geomed        weights      final Weiszfeld weight of each row (sums to 1)
+  cc            clipped, scale   whether each row was clipped; its clip factor
 """
 import torch
 
@@ -20,7 +33,17 @@ def _wmean(X, w):
     return (X * w).sum(0) / w.sum(0)
 
 
-def fedavg(U, f=0, w=None):
+def _row_share(rows, n, weight=None):
+    # rows: (k, d) row indices -> per-row share of the d coordinates
+    d = rows.shape[-1]
+    wt = None if weight is None else weight.flatten().double()
+    return (torch.bincount(rows.flatten(), weights=wt, minlength=n).double() / d).tolist()
+
+
+def fedavg(U, f=0, w=None, info=None):
+    if info is not None:
+        a = torch.ones(U.shape[0]) if w is None else w
+        info["weights"] = (a / a.sum()).tolist()
     return U.mean(0) if w is None else _wmean(U, w)
 
 
@@ -47,14 +70,39 @@ def _wmedian(U, w):
     return torch.where(tie, (lo + hi) / 2, lo)[0]
 
 
-def median(U, f=0, w=None):
+def _median_used_share(U, w):
+    # Which rows' values the (weighted) median takes, per coordinate
+    n = U.shape[0]
+    idx = U.sort(0).indices
+    if w is None:
+        lo, hi = idx[(n - 1) // 2], idx[n // 2]
+        tie = torch.full_like(lo, n % 2 == 0, dtype=torch.bool)
+    else:
+        cw = w[idx].cumsum(0)
+        half, tol = w.sum() / 2, 1e-6 * w.sum()
+        k = (cw < half - tol).sum(0, keepdim=True)
+        lo = idx.gather(0, k)[0]
+        hi = idx.gather(0, (k + 1).clamp(max=n - 1))[0]
+        tie = ((cw.gather(0, k) - half).abs() <= tol)[0]
+    half_w = torch.where(tie, 0.5, 1.0)
+    rows = torch.stack([lo, hi])
+    wts = torch.stack([half_w, torch.where(tie, 0.5, 0.0)])
+    return _row_share(rows, n, wts)
+
+
+def median(U, f=0, w=None, info=None):
     # Coordinate-wise median (Yin et al., 2018)
+    if info is not None:
+        info["used_share"] = _median_used_share(U, w)
     return _median(U) if w is None else _wmedian(U, w)
 
 
-def trimmed_mean(U, f=0, w=None):
+def trimmed_mean(U, f=0, w=None, info=None):
     # Drop the f largest and f smallest values per coordinate, average the rest
     n = U.shape[0]
+    if info is not None:
+        idx = U.sort(0).indices
+        info["trimmed_share"] = _row_share(torch.cat([idx[:f], idx[n - f:]]), n)
     if w is None:
         s = U.sort(0).values
         return s[f:n - f].mean(0)
@@ -70,19 +118,24 @@ def _krum_scores(U, f):
     return D.sort(1).values[:, 1:k + 1].sum(1)  # column 0 is distance to self
 
 
-def krum(U, f=0, w=None):
+def krum(U, f=0, w=None, info=None):
     # Blanchard et al., 2017: pick the single most "central" update
-    return U[_krum_scores(U, f).argmin()]
+    j = _krum_scores(U, f).argmin()
+    if info is not None:
+        info["selected"] = [int(j)]
+    return U[j]
 
 
-def multi_krum(U, f=0, w=None):
+def multi_krum(U, f=0, w=None, info=None):
     # Average the n - f updates with the best Krum scores
     m = U.shape[0] - f
     idx = _krum_scores(U, f).argsort()[:m]
+    if info is not None:
+        info["selected"] = sorted(idx.tolist())
     return U[idx].mean(0) if w is None else _wmean(U[idx], w[idx])
 
 
-def bulyan(U, f=0, w=None):
+def bulyan(U, f=0, w=None, info=None):
     # El Mhamdi et al., 2018: iterative Krum selection, then a trimmed
     # mean around the coordinate-wise median of the selected set
     n = U.shape[0]
@@ -100,12 +153,15 @@ def bulyan(U, f=0, w=None):
     beta = theta - 2 * f
     med = _median(S)
     idx = (S - med).abs().argsort(0)[:beta]
+    if info is not None:
+        info["selected"] = sorted(selected)
+        info["kept_share"] = _row_share(torch.tensor(selected)[idx], n)
     if w is None:
         return S.gather(0, idx).mean(0)
     return _wmean(S.gather(0, idx), w[selected][idx])
 
 
-def geomed(U, f=0, w=None, iters=10, eps=1e-6):
+def geomed(U, f=0, w=None, info=None, iters=10, eps=1e-6):
     # Geometric median via Weiszfeld iterations (RFA, Pillutla et al., 2022);
     # with w, the weighted geometric median (RFA's original form)
     a = torch.ones(U.shape[0]) if w is None else w
@@ -113,6 +169,8 @@ def geomed(U, f=0, w=None, iters=10, eps=1e-6):
     for _ in range(iters):
         b = a / torch.clamp((U - z).norm(dim=1), min=eps)
         z = (b[:, None] * U).sum(0) / b.sum()
+    if info is not None:
+        info["weights"] = (b / b.sum()).tolist()
     return z
 
 
@@ -123,12 +181,15 @@ class CenteredClipping:
     def __init__(self, tau=1.0, iters=1):
         self.tau, self.iters, self.v = tau, iters, None
 
-    def __call__(self, U, f=0, w=None):
+    def __call__(self, U, f=0, w=None, info=None):
         v = torch.zeros(U.shape[1]) if self.v is None else self.v
         for _ in range(self.iters):
             diff = U - v
             scale = torch.clamp(self.tau / (diff.norm(dim=1, keepdim=True) + 1e-12), max=1.0)
             v = v + ((diff * scale).mean(0) if w is None else _wmean(diff * scale, w))
+        if info is not None:  # from the last iteration
+            info["clipped"] = (scale[:, 0] < 1).tolist()
+            info["scale"] = scale[:, 0].tolist()
         self.v = v.clone()
         return v
 
