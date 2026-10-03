@@ -21,10 +21,16 @@ from .models import build_model
 # its seed. Importing here makes the reset happen before any run seeds itself.
 try:
     from flamby.datasets.fed_heart_disease import Baseline, FedHeartDisease
+    from flamby.datasets.fed_tcga_brca import Baseline as TcgaBaseline
+    from flamby.datasets.fed_tcga_brca import BaselineLoss as CoxLoss
+    from flamby.datasets.fed_tcga_brca import FedTcgaBrca
+    from lifelines.utils import concordance_index
 except ImportError:  # FLamby not installed: image datasets only
-    Baseline = FedHeartDisease = None
+    Baseline = FedHeartDisease = TcgaBaseline = CoxLoss = FedTcgaBrca = None
 
-FLAMBY = {"fed_heart_disease": 4}  # dataset -> number of hospitals
+FLAMBY = {"fed_heart_disease": 4, "fed_tcga_brca": 6}  # dataset -> number of centres
+# Survival tasks: y = (event, time), metric = C-index; label flipping is undefined
+SURVIVAL = {"fed_tcga_brca"}
 
 # Per-dataset defaults, applied by make_config unless overridden explicitly.
 # fed_heart_disease uses FLamby's FedAvg local settings (SGD lr 0.001, batch 4,
@@ -35,6 +41,11 @@ PRESETS = {
     "fed_heart_disease": dict(n_clients=4, lr=0.001, batch_size=4,
                               local_steps=100, rounds=106, eval_every=1,
                               device="cpu"),  # tiny model: CPU beats MPS
+    # FLamby's FedAvg settings (Cox model, SGD lr 0.1, batch 8, 100 local
+    # steps). Rounds: FLamby's 5 (= (866 // 6 // 8) * 30 // 100) until the
+    # convergence rule sets the main setting.
+    "fed_tcga_brca": dict(n_clients=6, lr=0.1, batch_size=8, local_steps=100,
+                          rounds=5, eval_every=1, device="cpu"),
 }
 
 
@@ -63,6 +74,19 @@ def _binary_accuracy(model, x, y):
     # FLamby heart metric: sigmoid output > 0.5 vs label
     model.eval()
     return ((model(x) > 0.5).float() == y).float().mean().item()
+
+
+@torch.no_grad()
+def _c_index(model, x, y):
+    # FLamby TCGA metric (lifelines): higher risk score = earlier event.
+    # NaN when the set has no comparable pairs (e.g. no events).
+    model.eval()
+    risk = model(x).squeeze(1).cpu().numpy()
+    y = y.cpu().numpy()
+    try:
+        return float(concordance_index(y[:, 1], -risk, y[:, 0]))
+    except ZeroDivisionError:
+        return float("nan")
 
 
 def _image_task(cfg, device):
@@ -117,9 +141,37 @@ def _heart_task(cfg, device, root="./data/flamby/fed_heart_disease"):
                 client_names=["cleveland", "hungary", "switzerland", "va"])
 
 
+def _tcga_task(cfg, device):
+    assert FedTcgaBrca is not None, "FLamby not installed: run setup_flamby.sh"
+
+    def tensors(ds):
+        xs, ys = zip(*(ds[i] for i in range(len(ds))))
+        return torch.stack(xs).to(device), torch.stack(ys).to(device)   # y: (event, time)
+
+    n = FLAMBY[cfg.dataset]
+    clients = [tensors(FedTcgaBrca(center=c, train=True)) for c in range(n)]
+    if cfg.val_frac > 0:
+        # Tuning mode: per-region holdout stratified by event indicator;
+        # metric on the pooled held-out patients. Test sets never loaded.
+        client_tests = []
+        for c, (x, y) in enumerate(clients):
+            tr, va = train_val_split(y[:, 0].cpu().numpy().astype(int), cfg.val_frac, cfg.seed + c)
+            tr, va = torch.as_tensor(tr, device=device), torch.as_tensor(va, device=device)
+            clients[c], client_tests = (x[tr], y[tr]), client_tests + [(x[va], y[va])]
+        pooled = tuple(torch.cat(t) for t in zip(*client_tests))
+    else:
+        # No per-centre normalisation here: pooled test = all regions' test sets
+        client_tests = [tensors(FedTcgaBrca(center=c, train=False)) for c in range(n)]
+        pooled = tensors(FedTcgaBrca(train=False, pooled=True))
+    return Task(clients=clients, test=pooled, client_tests=client_tests,
+                build_model=lambda: TcgaBaseline().to(device), loss=CoxLoss(),
+                metric=_c_index, num_classes=None,
+                client_names=["northeast", "south", "west", "midwest", "europe", "canada"])
+
+
 def load_task(cfg, device) -> Task:
     if cfg.dataset in FLAMBY:
         assert cfg.n_clients == FLAMBY[cfg.dataset], \
             f"{cfg.dataset} has {FLAMBY[cfg.dataset]} clients (n_clients={cfg.n_clients})"
-        return _heart_task(cfg, device)
+        return _tcga_task(cfg, device) if cfg.dataset in SURVIVAL else _heart_task(cfg, device)
     return _image_task(cfg, device)

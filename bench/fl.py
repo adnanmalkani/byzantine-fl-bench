@@ -8,7 +8,7 @@ import torch
 
 from .aggregators import check_valid, get_aggregator
 from .attacks import alie_z, apply_attack
-from .tasks import PRESETS, load_task
+from .tasks import PRESETS, SURVIVAL, load_task
 from .utils import flatten_params, get_device, load_flat_params, set_seed
 
 
@@ -111,11 +111,13 @@ def run(cfg: Config, log=print) -> dict:
         byz_fixed, f = None, int(round(cfg.byz_frac * n))
     f_srv = f if cfg.f_assumed is None else cfg.f_assumed
 
+    if cfg.attack == "label_flip" and cfg.dataset in SURVIVAL:
+        raise ValueError(f"label_flip is undefined for survival data ({cfg.dataset})")
     result = {"config": asdict(cfg), "f": f, "f_assumed": f_srv,
               "eval_split": "val" if cfg.val_frac > 0 else "test"}
     err = check_valid(cfg.aggregator, n, f_srv)
     if cfg.attack == "alie" and f:
-        # z = 0: ALIE sends the honest mean (no attack); z = inf: undefined
+        # z = 0: ALIE sends the mean of the benign updates (no attack); z = inf: undefined
         # or NaN (attackers are more than half the clients), so the run is invalid
         z = result["alie_z"] = alie_z(n, f)
         if not np.isfinite(z):
@@ -181,8 +183,9 @@ def run(cfg: Config, log=print) -> dict:
                  "loss": _eval_loss(model, task.loss, *task.test)}
             if task.client_tests:
                 h["client_acc"] = [task.metric(model, *t) for t in task.client_tests]
-                h["worst_acc"] = min(h["client_acc"])
-                h["gap"] = max(h["client_acc"]) - h["worst_acc"]
+                # nan-safe: a C-index is undefined on a set with no events
+                h["worst_acc"] = float(np.nanmin(h["client_acc"]))
+                h["gap"] = float(np.nanmax(h["client_acc"])) - h["worst_acc"]
             history.append(h)
             log(f"round {r + 1:4d}  acc {h['acc']:.4f}  ({time.time() - t0:.0f}s)")
 
