@@ -15,6 +15,15 @@ import torch.nn.functional as F
 from .data import dirichlet_partition, load_dataset, train_val_split
 from .models import build_model
 
+# FLamby calls torch.manual_seed(42) when imported (flamby/utils.py). Imported
+# lazily inside a run, that reset the RNG between set_seed and model init, so
+# the first FLamby run in each process started from the seed-42 model whatever
+# its seed. Importing here makes the reset happen before any run seeds itself.
+try:
+    from flamby.datasets.fed_heart_disease import Baseline, FedHeartDisease
+except ImportError:  # FLamby not installed: image datasets only
+    Baseline = FedHeartDisease = None
+
 FLAMBY = {"fed_heart_disease": 4}  # dataset -> number of hospitals
 
 # Per-dataset defaults, applied by make_config unless overridden explicitly.
@@ -77,7 +86,7 @@ def _image_task(cfg, device):
 
 
 def _heart_task(cfg, device, root="./data/flamby/fed_heart_disease"):
-    from flamby.datasets.fed_heart_disease import Baseline, FedHeartDisease
+    assert FedHeartDisease is not None, "FLamby not installed: run setup_flamby.sh"
 
     def tensors(**kw):
         ds = FedHeartDisease(data_path=root, **kw)

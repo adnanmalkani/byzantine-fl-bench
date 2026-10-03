@@ -48,10 +48,28 @@ def test_natural_sweep_grid():
     assert any("_alie_byz2_" in l for l in names) and any("_alie_byz1-3_" in l for l in names)
 
 
+def test_first_heart_run_in_a_process_is_seeded():
+    # Regression: FLamby's import-time torch.manual_seed(42) used to fire inside
+    # the first run of each process, after set_seed, replacing its initial model.
+    # A fresh interpreter must give the same result on its first and second run.
+    from pathlib import Path
+    if not Path("data/flamby/fed_heart_disease/processed.va.data").exists():
+        print("skipped: heart data not downloaded")
+        return
+    code = ("from bench.fl import make_config, run\n"
+            "c = make_config(dataset='fed_heart_disease', rounds=2, seed=0)\n"
+            "a, b = (run(c, log=lambda *_: None)['history'] for _ in range(2))\n"
+            "assert a == b, 'first run differs from second'\n"
+            "print('ok')")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert out.stdout.strip() == "ok", out.stdout + out.stderr
+
+
 if __name__ == "__main__":
     test_attacker_sets()
     test_fixed_attackers_are_used_and_logged()
     test_weighted_run()
     test_heart_preset()
     test_natural_sweep_grid()
+    test_first_heart_run_in_a_process_is_seeded()
     print("all tests passed")
