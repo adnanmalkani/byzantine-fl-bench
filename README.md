@@ -83,9 +83,10 @@ data size (tagged `_ls{K}`). K = 94 matches the average steps of one epoch
 **Parallel sweeps:** `--shard i/N` runs every N-th grid point, so N processes
 can split one grid (e.g. `--shard 0/2` and `--shard 1/2`).
 
-## Tuning CC's tau (rule v2, per dataset, never on the test set)
+## Tuning CC's tau (rule v2.1, per dataset, never on the test set)
 
-Rule v2 was fixed on 2026-10-03, before any ISIC/TCGA data was seen
+Rule v2 was fixed on 2026-10-03, before any ISIC/TCGA data was seen, and
+amended to v2.1 the same day, before the MNIST multi-seed check was run
 (`tune_cc.py`):
 
 1. **Reference run:** clean, unweighted FedAvg in validation mode (10% of
@@ -101,10 +102,14 @@ Rule v2 was fixed on 2026-10-03, before any ISIC/TCGA data was seen
    variant used for the dataset, at the dataset's main round count. Per
    variant, the paired-by-seed difference in validation accuracy vs tau0
    with a 95% t CI.
-5. **Decision:** keep tau0 unless some value is significantly better (CI
-   lower bound > 0) in every variant; then take the highest mean among
-   those. One tau per dataset, shared across variants. No multiplicity
-   correction.
+5. **Decision:** keep tau0 unless some value is better by a practically
+   relevant margin, i.e. the CI lower bound exceeds +0.5 points, in every
+   variant; then take the highest mean among those. One tau per dataset,
+   shared across variants. No multiplicity correction. (v2 used a lower
+   bound > 0. Because the check uses clean accuracy only, it would
+   systematically favour larger tau, i.e. less clipping and less
+   robustness, whenever seed noise is small, as on MNIST; v2.1 adds the
+   margin for that reason.)
 6. The full grid is reported as an appendix sensitivity table
    (`results_tables/tau_sensitivity_<dataset>.csv`).
 

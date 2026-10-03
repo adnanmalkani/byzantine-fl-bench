@@ -32,6 +32,9 @@ def test_tau_rule_v2_decision():
     assert decide({"u": flat}, 0.3)[0] == 0.3            # nothing better: keep tau0
     better = {**flat, 1.0: [x + 0.02 for x in flat[0.3]]}
     assert decide({"u": better}, 0.3)[0] == 1.0          # clearly better: switch
+    slightly = {**flat, 1.0: [x + 0.002 for x in flat[0.3]]}
+    assert decide({"u": slightly}, 0.3, margin=0.0)[0] == 1.0   # v2: significant
+    assert decide({"u": slightly}, 0.3)[0] == 0.3        # v2.1: below 0.5-pt margin
     # better in one variant only -> keep tau0 (must hold in every variant)
     assert decide({"u": better, "w": flat}, 0.3)[0] == 0.3
 

@@ -1,6 +1,7 @@
-"""Choose Centered Clipping's radius tau for one dataset (rule v2).
+"""Choose Centered Clipping's radius tau for one dataset (rule v2.1).
 
-Rule v2 (fixed 2026-10-03, before any ISIC/TCGA data; README "Tuning CC's tau"):
+Rule v2 (fixed 2026-10-03, before any ISIC/TCGA data; README "Tuning CC's tau"),
+amended to v2.1 the same day, before the MNIST multi-seed check was run:
   1. Reference: clean, unweighted FedAvg in validation mode (10% holdout),
      first 10 rounds, the dataset's tuning seeds.
   2. tau0 = median of ||u_i - Delta_prev|| over clients, rounds 2-10 and
@@ -11,8 +12,10 @@ Rule v2 (fixed 2026-10-03, before any ISIC/TCGA data; README "Tuning CC's tau"):
   4. Clean CC runs (validation mode, dataset's main rounds) for every grid
      tau, in every weighting variant used for the dataset; per variant, the
      paired-by-seed difference in validation accuracy vs tau0, with a 95% t CI.
-  5. Keep tau0 unless some tau is significantly better (CI lower bound > 0)
-     in EVERY variant; then choose, among those, the highest mean accuracy.
+  5. Keep tau0 unless some tau is better by a practically relevant margin
+     (CI lower bound > +0.5 points; v2 used > 0) in EVERY variant; then
+     choose, among those, the highest mean accuracy. The margin stops a
+     clean-only check from always favouring less clipping (less robustness).
      One tau per dataset, shared across variants. No multiplicity correction.
   6. The whole grid is reported (sensitivity table).
 
@@ -62,9 +65,10 @@ def paired_ci(a, b):
     return d.mean(), d.mean() - h, d.mean() + h
 
 
-def decide(acc: dict, tau0: float):
+def decide(acc: dict, tau0: float, margin: float = 0.005):
     """acc: {variant: {tau: [val acc per seed]}} -> (tau, rows of the table).
-    Keep tau0 unless another tau is significantly better in every variant."""
+    Keep tau0 unless another tau is better in every variant, with the 95% CI
+    of the paired difference entirely above `margin` (accuracy as a fraction)."""
     rows, better = [], None
     for tau in sorted(next(iter(acc.values()))):
         sig_all = True
@@ -72,7 +76,7 @@ def decide(acc: dict, tau0: float):
             m, lo, hi = paired_ci(a[tau], a[tau0]) if tau != tau0 else (0.0, 0.0, 0.0)
             rows.append({"variant": var, "tau": tau, "val_acc_mean": np.mean(a[tau]),
                          "diff_vs_tau0": m, "ci95_lo": lo, "ci95_hi": hi})
-            sig_all &= tau != tau0 and lo > 0
+            sig_all &= tau != tau0 and lo > margin
         if sig_all:
             score = np.mean([np.mean(a[tau]) for a in acc.values()])
             if better is None or score > better[1]:
@@ -101,6 +105,8 @@ def main():
     p.add_argument("--f_assumed", type=int, default=None,
                    help="design f for clean runs (default: 1 if n <= 6 else 4)")
     p.add_argument("--val_frac", type=float, default=0.1)
+    p.add_argument("--margin", type=float, default=0.005,
+                   help="override needs paired CI lower bound above this (0.005 = 0.5 pt)")
     p.add_argument("--tau0_only", action="store_true", help="stop after computing tau0")
     p.add_argument("--shard", default="0/1")
     p.add_argument("--out", default="results_tune")
@@ -148,20 +154,20 @@ def main():
     if not complete:
         print("CC grid runs not finished yet (other shards?); rerun")
         return
-    tau, rows = decide(acc, tau0)
+    tau, rows = decide(acc, tau0, a.margin)
     table = pd.DataFrame(rows)
     table[["val_acc_mean", "diff_vs_tau0", "ci95_lo", "ci95_hi"]] *= 100  # points
     Path("results_tables").mkdir(exist_ok=True)
     table = table.round({c: 2 for c in ("val_acc_mean", "diff_vs_tau0", "ci95_lo", "ci95_hi")})
     table.to_csv(f"results_tables/tau_sensitivity_{a.dataset}.csv", index=False)
     print(table.to_string(index=False))
-    sel = {"dataset": a.dataset, "rule": "v2", "cc_tau": tau, "tau0_raw": tau0_raw,
+    sel = {"dataset": a.dataset, "rule": "v2.1", "margin": a.margin, "cc_tau": tau, "tau0_raw": tau0_raw,
            "tau0": tau0, "grid": grid, "overridden": tau != tau0, "seeds": a.seeds,
            "variants": [bool(v) for v in a.variants], "f_assumed": f_srv,
            "val_frac": a.val_frac, "rounds": make_config(dataset=a.dataset).rounds}
     (out / f"cc_tau_{a.dataset}.json").write_text(json.dumps(sel, indent=2))
     print(f"\nselected tau = {tau}" + (" (validation override)" if tau != tau0 else
-                                         " (= tau0, no significant improvement)"))
+                                         " (= tau0, no improvement beyond the margin)"))
 
 
 if __name__ == "__main__":
