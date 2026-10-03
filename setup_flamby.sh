@@ -13,6 +13,11 @@ if [ ! -d third_party/FLamby ]; then
 fi
 git -C third_party/FLamby checkout -q "$FLAMBY_COMMIT"
 
+# numpy >= 2 removed the np.NaN alias; FLamby's heart loader still uses it.
+# Same value as np.nan, so this patch does not change the data.
+sed -i.bak 's/np\.NaN/np.nan/' third_party/FLamby/flamby/datasets/fed_heart_disease/dataset.py
+rm -f third_party/FLamby/flamby/datasets/fed_heart_disease/dataset.py.bak
+
 SITE=$(.venv/bin/python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
 echo "$PWD/third_party/FLamby" > "$SITE/flamby.pth"
 
