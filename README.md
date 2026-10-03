@@ -83,27 +83,46 @@ data size (tagged `_ls{K}`). K = 94 matches the average steps of one epoch
 **Parallel sweeps:** `--shard i/N` runs every N-th grid point, so N processes
 can split one grid (e.g. `--shard 0/2` and `--shard 1/2`).
 
-## Tuning CC's tau (per dataset, on a validation split)
+## Tuning CC's tau (rule v2, per dataset, never on the test set)
 
-Update norms differ across datasets, so Centered Clipping's radius tau is
-tuned separately for each dataset, and never on the test set:
+Rule v2 was fixed on 2026-10-03, before any ISIC/TCGA data was seen
+(`tune_cc.py`):
 
-1. `python tune_cc.py --dataset <name>` runs clean CC (no attack, server
-   assumes f = 4), alpha 0.5, seed 0, 50 rounds, for tau in
-   {0.1, 0.3, 1, 3, 10}.
-2. In these runs (`--val_frac 0.1`), 10% of the training set (stratified by
-   class, fixed seed) is held out. Clients train on the other 90%, and
-   accuracy is measured on the held-out 10%. Result files carry
-   `"eval_split": "val"` and a `_val0.1` name tag.
-3. We select the **smallest tau whose validation accuracy is within 0.3
-   points of the best**: among radii that cost (almost) nothing on clean
-   data, the smallest one gives an attacker the least room.
-4. The choice is saved to `results_tune/cc_tau_<dataset>.json` and passed to
-   every sweep on that dataset with `--cc_tau`. Final runs train on the full
-   training set and report test accuracy.
+1. **Reference run:** clean, unweighted FedAvg in validation mode (10% of
+   the training data held out, stratified; per hospital for natural splits),
+   first 10 rounds, the dataset's tuning seeds (MNIST 5, heart 20).
+2. **tau0** = median distance of each client update from the previous
+   aggregate, ||u_i - Delta_prev||, over clients, rounds 2-10 and seeds.
+   This is the quantity CC clips (round 1 has no previous aggregate).
+3. **Rounding:** tau0 snaps to the nearest value of the ladder {1, 3} x 10^k
+   (log scale). The check grid is that value and two ladder steps either
+   side (about tau0/10 to 10 tau0).
+4. **Validation check:** clean CC for each grid value, in every weighting
+   variant used for the dataset, at the dataset's main round count. Per
+   variant, the paired-by-seed difference in validation accuracy vs tau0
+   with a 95% t CI.
+5. **Decision:** keep tau0 unless some value is significantly better (CI
+   lower bound > 0) in every variant; then take the highest mean among
+   those. One tau per dataset, shared across variants. No multiplicity
+   correction.
+6. The full grid is reported as an appendix sensitivity table
+   (`results_tables/tau_sensitivity_<dataset>.csv`).
 
-Note: one clean tuning setting (alpha 0.5, one seed) is a simplification;
-the selected tau is not re-tuned per alpha or per attack.
+Results: Fed-Heart-Disease tau0 = 0.035 -> 0.03; no grid value is
+significantly better in either variant, so **tau = 0.03**.
+
+**History (for transparency).** Rule v1 chose the smallest tau within 0.3
+points of the best validation accuracy, on a fixed grid {0.1, ..., 10}.
+- MNIST (seed 0): v1 gave 0.1. Extending the grid down (0.03: -0.96 pt,
+  0.01: -3.6 pt) confirmed 0.1 was not an edge artefact.
+- Heart (20 seeds, grid scaled to its update size): v1 gave 0.03
+  (unweighted) and 0.003 (weighted, smallest grid value). Paired 95% CIs
+  showed these differences were within seed noise (about +/- 1 pt; 49
+  validation patients), and different tau per variant would confound the
+  weighted-vs-unweighted comparison. We therefore deviated from v1 and used
+  a shared tau = 0.03 (the best mean in both variants), which motivated
+  rule v2; v2 independently gives 0.03.
+  Old outputs: `results_legacy/tune_old_rule/`.
 
 ## Fed-Heart-Disease (FLamby, natural splits)
 

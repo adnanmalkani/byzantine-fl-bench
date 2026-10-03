@@ -146,6 +146,7 @@ def run(cfg: Config, log=print) -> dict:
     order = [i for i in range(n) if i not in byz] + [i for i in range(n) if i in byz]
     w = torch.tensor([float(sizes[i]) for i in order]) if cfg.weighted else None
     diag = []  # per round: aggregator diagnostics, indexed by client id
+    prev = torch.zeros(g.numel())  # previous aggregate update (CC's reference point)
     for r in range(cfg.rounds):
         honest, byz_own = [], []
         for i in range(n):
@@ -168,6 +169,9 @@ def run(cfg: Config, log=print) -> dict:
         info = {}
         update = agg(U, f=f_srv, w=w, info=info)
         g = g + cfg.server_lr * update.to(device)
+        # distance of each update from the previous aggregate (used to set tau)
+        info["dist_prev"] = (U - prev).norm(dim=1).tolist()
+        prev = update.detach().cpu()
         diag.append(_by_client(info, order))
 
         if (r + 1) % cfg.eval_every == 0 or r == cfg.rounds - 1:
