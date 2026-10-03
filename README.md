@@ -61,7 +61,20 @@ A grid (resumable: finished runs are skipped):
 ```bash
 python sweep.py --datasets mnist --alphas 0.1,0.5,100 \
   --byz_fracs 0.1,0.2,0.3 --seeds 0,1,2 --rounds 50
-python summarize.py              # mean +/- std table -> summary.csv
+python summarize.py results      # mean and 95% CI -> results_tables/summary_results{,_pooled}.csv
+```
+
+Summaries average every metric over the last 3 evaluations. Natural splits
+add the worst hospital, the worst *honest* hospital (attackers' own test
+sets excluded) and the best-worst gap. ALIE runs with z = 0 (n = 4, 6 or 20
+with f = 1) are flagged `degenerate`: the attackers send the mean of the
+benign updates, so they are kept apart from real attacks.
+
+Heart analysis and figures (all to `results_tables/`):
+
+```bash
+python analyze_heart.py          # per-attacker tables, exclusion diagnostics, scatter
+python validity_table.py         # validity.csv + fig_validity_heatmap
 ```
 
 ## Defaults
@@ -171,6 +184,14 @@ Every run stores `diag`: per round, per client id, who the rule kept or
 suppressed (Krum/Multi-Krum selections, share of coordinates trimmed or
 kept, the share of the median each client determines, geometric-median
 weights, CC clip events and factors). See `bench/aggregators.py`.
+`analyze_heart.py` turns them into one comparable number per hospital, its
+*relative influence*: effective share of the aggregate / nominal share (1/n,
+or its sample share when weighted); below 1 = down-weighted.
+
+Equivalences to keep in mind when reading tables: with f = 0, trimmed mean,
+Multi-Krum and Bulyan are the plain mean; when n - 2f <= 2 (e.g. n = 4,
+f = 1) the unweighted trimmed mean *is* the coordinate-wise median
+(`validity_table.py` flags both).
 
 ## Known limitations / TODO
 

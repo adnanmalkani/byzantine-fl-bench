@@ -22,6 +22,16 @@ def test_validity_table():
     assert not bool(cell(df, 20, 0, "fedavg").alie_degenerate)  # no attackers
 
 
+def test_trimmed_mean_equals_median_when_two_or_fewer_rows_kept():
+    df = build([3, 4, 5, 6], [1, 2])
+    for n, f in [(3, 1), (4, 1), (5, 2), (6, 2)]:               # n - 2f <= 2
+        assert cell(df, n, f, "trimmed_mean").degenerate == "= median", (n, f)
+    for n, f in [(5, 1), (6, 1)]:                               # 3+ rows kept
+        assert cell(df, n, f, "trimmed_mean").degenerate == "", (n, f)
+    assert cell(df, 4, 1, "median").degenerate == ""            # not flagged against itself
+
+
 if __name__ == "__main__":
     test_validity_table()
+    test_trimmed_mean_equals_median_when_two_or_fewer_rows_kept()
     print("all tests passed")
