@@ -113,8 +113,14 @@ amended to v2.1 the same day, before the MNIST multi-seed check was run
 6. The full grid is reported as an appendix sensitivity table
    (`results_tables/tau_sensitivity_<dataset>.csv`).
 
-Results: Fed-Heart-Disease tau0 = 0.035 -> 0.03; no grid value is
-significantly better in either variant, so **tau = 0.03**.
+Results:
+- Fed-Heart-Disease (20 seeds, both variants): tau0 = 0.035 -> 0.03; no grid
+  value is better in either variant, so **tau = 0.03**.
+- MNIST (5 seeds, unweighted): tau0 = 0.50 -> 0.3. tau = 1 and 3 are
+  statistically but not practically better (+0.09 and +0.11 points, CI lower
+  bounds 0.06 and 0.04, below the 0.5-point margin), so **tau = 0.3**. Under
+  v2 (no margin) the rule would have switched to tau = 3, where CC barely
+  clips honest updates.
 
 **History (for transparency).** Rule v1 chose the smallest tau within 0.3
 points of the best validation accuracy, on a fixed grid {0.1, ..., 10}.
