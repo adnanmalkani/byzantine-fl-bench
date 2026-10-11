@@ -182,6 +182,73 @@ Setup: `sh setup_flamby.sh`, then download the data with FLamby's script
   convergence seed 0. tau (0.03), R* (106) and the FLamby reproduction did
   not change. Old files: `results_legacy/first_run_bug/`.
 
+## Fed-TCGA-BRCA (FLamby, natural splits)
+
+Data ships with FLamby (`brca.csv`, 6 regions, 866 train / 222 test
+patients). FLamby asks once, interactively, that you accept the GDC data
+terms (https://gdc.cancer.gov/access-data/data-access-processes-and-tools);
+until then any TCGA run stops at the prompt. Label flip does not apply
+(survival data) and raises an error.
+
+- **Reproduction:** `reproduce_flamby_tcga.py` (FLamby's settings: Cox
+  model, SGD lr 0.1, batch 8, 100 local steps, 5 rounds, seeds 42-46).
+  Means are within one published std on all 7 test sets (pooled C-index
+  0.710 +/- 0.196 vs FLamby 0.735 +/- 0.175). Not per-seed identical: the
+  initial model is identical to FLamby's, but batch order differs, and at
+  lr 0.1 training is unstable enough that the order decides which seed
+  collapses (FLamby: seed 43, ours: seed 46). FLamby's settings are used
+  only for this reproduction table.
+
+### Main-setting learning rate and rounds (pre-registered 2026-10-11, before any run)
+
+Clean sample-weighted FedAvg, FLamby's other settings (batch 8, 100 local
+steps), seeds 0-19, 200 rounds, evaluated every round on the pooled
+validation set (10% holdout per region, stratified by event: 86 patients,
+12 deaths, 319-541 comparable pairs depending on the seed; the test set is
+never used). C(r) = pooled validation C-index after round r.
+
+1. **Learning-rate grid:** {0.1, 0.03, 0.01, 0.003}, all with the same 20
+   seeds and 200 rounds.
+2. **Collapse** (per seed, decided from C(r) alone). A seed has collapsed if
+   - *divergence:* the training loss, the model or its risk scores become
+     non-finite (NaN/inf) at any round, or the run fails because of it; or
+   - *learned, then lost:* C(r) >= 0.60 at some round r and C(r') < 0.50 at
+     a later round r' > r. 0.50 is a random ranking; 0.60 means the seed
+     had clearly learned something first. Requiring this swing, rather than
+     any drop, keeps round-to-round noise from counting (only 12 validation
+     deaths).
+
+   Disclosure: the 0.50 and 0.60 thresholds were set after seeing the two
+   test-set collapses in the reproduction (pooled C-index 0.37 and 0.42 at
+   FLamby's settings), but before any validation run.
+
+   A seed whose C(r) never reaches 0.60 within 200 rounds has *not learned*.
+   This is reported separately and does not count as a collapse.
+3. **Choice:** the largest learning rate with zero collapsed seeds out of 20.
+   If the chosen rate has any not-learned seed, or no rate qualifies, stop:
+   no grid until this is discussed.
+4. **Rounds:** the heart rule, on the chosen rate's 20 curves (no new runs).
+   A(r) = mean of C(r) over seeds, A_end = mean of A(r) over rounds
+   151-200, R* = the smallest r with A(r') >= A_end - 0.005 for every
+   r' >= r. If R* > 150 (no plateau within 200 rounds), the chosen rate is
+   re-run for 400 rounds and the rule applied with A_end over 301-400.
+
+### Metrics (pre-registered 2026-10-11, before any grid run)
+
+- **Main average:** within-region C-index (pairs only inside one region),
+  averaged over regions weighted by test patients, the same convention as
+  heart's `avg_acc`. FLamby's pooled-test C-index is used only in the
+  reproduction table.
+- **Worst region:** only regions with **at least 3 test deaths** count:
+  Northeast (14), West (8), South (4), Midwest (3). Europe (2) and Canada
+  (1) are excluded. Reason: every comparable pair contains a death, and the
+  pairs that share a death flip together when that patient's risk score
+  moves, so the number of deaths, not pairs, is the real amount of evidence.
+  Canada's C-index rests on 3 pairs and one death. Fixed after seeing each
+  region's death and pair counts, before any results.
+- All 6 regions still count in the average and each gets its own column in
+  the appendix tables.
+
 ## Aggregator diagnostics
 
 Every run stores `diag`: per round, per client id, who the rule kept or
