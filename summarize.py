@@ -16,6 +16,10 @@ Metrics, each the mean over the last 3 evaluations:
                     (main worst-hospital metric)
   worst_acc         lowest over all hospitals, attackers included (appendix)
   gap               best minus worst per-hospital accuracy
+Survival data (TCGA, metric = C-index): avg_acc is the stratified C-index
+(within-region comparable pairs pooled = per-region C-indices weighted by
+pairs); worst_honest_acc and worst_acc only count regions with >= 3 test
+deaths (Northeast, South, West, Midwest). All regions stay in avg_acc.
 95% CI uses the t distribution over runs (seeds, or seeds x attacker sets
 when pooled). Tuning runs (evaluated on a validation split) are skipped.
 
@@ -39,6 +43,8 @@ KEYS = ["dataset", "alpha", "rounds", "attack", "degenerate", "byz_frac", "f",
         "f_assumed", "aggregator", "weighted", "cc_tau"]
 METRICS = ["final_acc", "avg_acc", "worst_honest_acc", "worst_acc", "gap"]
 LAST = 3  # evaluations averaged for every metric
+SURVIVAL = {"fed_tcga_brca"}  # C-index datasets (same set as bench.tasks.SURVIVAL)
+MIN_DEATHS = 3  # survival: a region counts in worst-region metrics only with >= 3 test deaths
 
 
 def is_degenerate(r: dict) -> bool:
@@ -57,23 +63,58 @@ def client_test_sizes(dataset: str) -> tuple:
     return tuple(len(y) for _, y in task.client_tests)
 
 
-def run_metrics(r: dict, last: int = LAST, test_sizes=None) -> dict:
+@lru_cache
+def client_test_survival(dataset: str) -> tuple:
+    """Per-region (comparable pairs, deaths) on the test sets, as lifelines'
+    concordance_index counts pairs (a death and a censoring at the same time
+    count as comparable)."""
+    import torch
+    from lifelines.utils.concordance import _concordance_summary_statistics
+
+    from bench.fl import make_config
+    from bench.tasks import load_task
+    task = load_task(make_config(dataset=dataset), torch.device("cpu"))
+    pairs, deaths = [], []
+    for _, y in task.client_tests:
+        e, t = y[:, 0].numpy().astype(bool), y[:, 1].numpy()
+        pairs.append(int(_concordance_summary_statistics(t, np.zeros_like(t), e)[2]))
+        deaths.append(int(e.sum()))
+    return tuple(pairs), tuple(deaths)
+
+
+def run_metrics(r: dict, last: int = LAST, test_sizes=None, survival=None) -> dict:
     """Per-run metrics, each averaged over the last `last` evaluations.
-    Natural splits: avg_acc replaces final_acc (FLamby's pooled test set)."""
+    Natural splits: avg_acc replaces final_acc (FLamby's pooled test set).
+    Survival (TCGA; `survival` = per-region (pairs, deaths), loaded from the
+    data if None): avg_acc is the stratified C-index, i.e. per-region
+    C-indices weighted by comparable pairs, and the worst-region metrics only
+    count regions with >= MIN_DEATHS test deaths (README pre-registration)."""
     hist = r["history"][-last:]
     out = {"final_acc": float(np.mean([h["acc"] for h in hist]))}
     if "client_acc" in hist[0]:
-        C = np.array([h["client_acc"] for h in hist])           # evals x hospitals
-        if test_sizes is None:
-            test_sizes = r.get("client_test_sizes")
-        if test_sizes is None:
+        C = np.array([h["client_acc"] for h in hist], dtype=float)   # evals x hospitals
+        dataset = r.get("config", {}).get("dataset")
+        if survival is None and dataset in SURVIVAL:
             assert r.get("eval_split", "test") == "test"
-            test_sizes = client_test_sizes(r["config"]["dataset"])
-        n = np.asarray(test_sizes, dtype=float)
-        honest = [i for i in range(C.shape[1]) if i not in r.get("byz_ids", [])]
+            survival = client_test_survival(dataset)
+        if survival is not None:
+            pairs, deaths = (np.asarray(v, dtype=float) for v in survival)
+            w = pairs                                   # stratified C-index
+            eligible = deaths >= MIN_DEATHS
+        else:
+            if test_sizes is None:
+                test_sizes = r.get("client_test_sizes")
+            if test_sizes is None:
+                assert r.get("eval_split", "test") == "test"
+                test_sizes = client_test_sizes(dataset)
+            w = np.asarray(test_sizes, dtype=float)      # patient-weighted accuracy
+            eligible = np.ones(C.shape[1], dtype=bool)
+        honest = [i for i in range(C.shape[1])
+                  if i not in r.get("byz_ids", []) and eligible[i]]
         del out["final_acc"]
-        out.update(avg_acc=float((C @ n / n.sum()).mean()),
-                   worst_honest_acc=C[:, honest].min(1).mean(), worst_acc=C.min(1).mean(),
+        out.update(avg_acc=float((np.where(w > 0, C, 0) @ w / w.sum()).mean()),
+                   worst_honest_acc=C[:, honest].min(1).mean(),
+                   worst_acc=C[:, eligible].min(1).mean(),
                    gap=(C.max(1) - C.min(1)).mean(), client_acc=C.mean(0).tolist())
     return out
 

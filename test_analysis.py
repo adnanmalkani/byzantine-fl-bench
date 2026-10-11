@@ -38,6 +38,48 @@ def test_run_metrics_last3_and_honest_worst():
     assert math.isclose(m2["avg_acc"], (0.8 + 0.6 + 0.3) / 3)
 
 
+def test_survival_stratified_c_and_death_cutoff():
+    from lifelines.utils import concordance_index
+    from lifelines.utils.concordance import _concordance_summary_statistics as css
+
+    from summarize import MIN_DEATHS, SURVIVAL, client_test_survival
+    import bench.tasks
+    assert SURVIVAL == bench.tasks.SURVIVAL
+    # Pair-weighted mean of per-region C-indices == one C-index over all
+    # within-region pairs; with ties in times (death vs censored) and scores
+    rng = np.random.default_rng(0)
+    regions = []
+    for n in (30, 12, 6):
+        t = rng.integers(1, 8, n).astype(float)
+        e = rng.random(n) < 0.4
+        e[0] = True
+        regions.append((t, e, rng.integers(0, 4, n).astype(float)))
+    C = np.array([concordance_index(t, -s, e) for t, e, s in regions])
+    stats = [css(t, -s, e) for t, e, s in regions]          # (correct, tied, pairs)
+    direct = sum(c + 0.5 * ti for c, ti, _ in stats) / sum(p for *_, p in stats)
+    pairs = [int(p) for *_, p in stats]
+    deaths = [int(e.sum()) for _, e, _ in regions]
+    m = run_metrics({"history": [{"acc": 0.0, "client_acc": C.tolist()}], "byz_ids": []},
+                    last=1, survival=(pairs, deaths))
+    assert math.isclose(m["avg_acc"], direct)
+
+    # Death cutoff: regions with < 3 test deaths never count as the worst one,
+    # but still count in the average
+    hist = [{"acc": 0.0, "client_acc": [0.70, 0.10, 0.65, 0.90]}]
+    surv = ([100, 3, 50, 50], [14, 1, 3, 2])                # region 1, 3: < 3 deaths
+    m = run_metrics({"history": hist, "byz_ids": []}, last=1, survival=surv)
+    assert math.isclose(m["worst_acc"], 0.65) and math.isclose(m["worst_honest_acc"], 0.65)
+    assert math.isclose(m["avg_acc"], (70 + 0.3 + 32.5 + 45) / 203)
+    m = run_metrics({"history": hist, "byz_ids": [2]}, last=1, survival=surv)
+    assert math.isclose(m["worst_honest_acc"], 0.70)        # attacker 2 excluded too
+    assert math.isclose(m["worst_acc"], 0.65)
+
+    # Real TCGA test sets: counts as reported, eligible = NE, S, W, MW
+    pairs, deaths = client_test_survival("fed_tcga_brca")
+    assert pairs == (358, 44, 108, 48, 47, 3) and deaths == (14, 4, 8, 3, 2, 1)
+    assert [d >= MIN_DEATHS for d in deaths] == [True, True, True, True, False, False]
+
+
 def test_influence_per_rule():
     d = {"dist_prev": [1.0, 2.0, 3.0, 4.0]}
     rel, rate, down, dist = influence(fake_run("fedavg", diag=[{**d, "weights": [0.25] * 4}]))
@@ -85,6 +127,7 @@ def test_attacker_table_pools_attacks_per_seed():
 if __name__ == "__main__":
     test_degenerate_flag()
     test_run_metrics_last3_and_honest_worst()
+    test_survival_stratified_c_and_death_cutoff()
     test_influence_per_rule()
     test_attacker_table_pools_attacks_per_seed()
     print("all tests passed")

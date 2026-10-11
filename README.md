@@ -235,10 +235,16 @@ never used). C(r) = pooled validation C-index after round r.
 
 ### Metrics (pre-registered 2026-10-11, before any grid run)
 
-- **Main average:** within-region C-index (pairs only inside one region),
-  averaged over regions weighted by test patients, the same convention as
-  heart's `avg_acc`. FLamby's pooled-test C-index is used only in the
-  reproduction table.
+- **Main average:** the stratified (within-region) C-index: the comparable
+  pairs of all regions, each pair inside one region, pooled into one
+  C-index (608 test pairs). This equals the per-region C-indices averaged
+  with weights = comparable pairs. FLamby's pooled-test C-index, which also
+  compares patients across regions, is used only in the reproduction table.
+  *Correction (2026-10-11, before any TCGA result):* the first version of
+  this pre-registration (commit 90341e4) said "weighted by test patients"
+  (heart's convention). That contradicted the decision already taken: with
+  patient weights, Canada's 3 pairs would pull the average as if they were
+  solid evidence (11 patients = 5% weight from 0.5% of the pairs).
 - **Worst region:** only regions with **at least 3 test deaths** count:
   Northeast (14), West (8), South (4), Midwest (3). Europe (2) and Canada
   (1) are excluded. Reason: every comparable pair contains a death, and the
