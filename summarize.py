@@ -18,8 +18,8 @@ Metrics, each the mean over the last 3 evaluations:
   gap               best minus worst per-hospital accuracy
 Survival data (TCGA, metric = C-index): avg_acc is the stratified C-index
 (within-region comparable pairs pooled = per-region C-indices weighted by
-pairs); worst_honest_acc and worst_acc only count regions with >= 3 test
-deaths (Northeast, South, West, Midwest). All regions stay in avg_acc.
+pairs); worst_honest_acc, worst_acc and gap only count regions with >= 3
+test deaths (Northeast, South, West, Midwest). All regions stay in avg_acc.
 95% CI uses the t distribution over runs (seeds, or seeds x attacker sets
 when pooled). Tuning runs (evaluated on a validation split) are skipped.
 
@@ -88,7 +88,7 @@ def run_metrics(r: dict, last: int = LAST, test_sizes=None, survival=None) -> di
     Survival (TCGA; `survival` = per-region (pairs, deaths), loaded from the
     data if None): avg_acc is the stratified C-index, i.e. per-region
     C-indices weighted by comparable pairs, and the worst-region metrics only
-    count regions with >= MIN_DEATHS test deaths (README pre-registration)."""
+    and the gap only count regions with >= MIN_DEATHS test deaths (README)."""
     hist = r["history"][-last:]
     out = {"final_acc": float(np.mean([h["acc"] for h in hist]))}
     if "client_acc" in hist[0]:
@@ -115,7 +115,8 @@ def run_metrics(r: dict, last: int = LAST, test_sizes=None, survival=None) -> di
         out.update(avg_acc=float((np.where(w > 0, C, 0) @ w / w.sum()).mean()),
                    worst_honest_acc=C[:, honest].min(1).mean(),
                    worst_acc=C[:, eligible].min(1).mean(),
-                   gap=(C.max(1) - C.min(1)).mean(), client_acc=C.mean(0).tolist())
+                   gap=(C[:, eligible].max(1) - C[:, eligible].min(1)).mean(),
+                   client_acc=C.mean(0).tolist())
     return out
 
 

@@ -70,6 +70,7 @@ def test_survival_stratified_c_and_death_cutoff():
     m = run_metrics({"history": hist, "byz_ids": []}, last=1, survival=surv)
     assert math.isclose(m["worst_acc"], 0.65) and math.isclose(m["worst_honest_acc"], 0.65)
     assert math.isclose(m["avg_acc"], (70 + 0.3 + 32.5 + 45) / 203)
+    assert math.isclose(m["gap"], 0.70 - 0.65)              # not 0.90 - 0.10
     m = run_metrics({"history": hist, "byz_ids": [2]}, last=1, survival=surv)
     assert math.isclose(m["worst_honest_acc"], 0.70)        # attacker 2 excluded too
     assert math.isclose(m["worst_acc"], 0.65)

@@ -233,6 +233,27 @@ never used). C(r) = pooled validation C-index after round r.
    r' >= r. If R* > 150 (no plateau within 200 rounds), the chosen rate is
    re-run for 400 rounds and the rule applied with A_end over 301-400.
 
+**Screen result (2026-10-11).** Collapsed / not-learned seeds out of 20:
+lr 0.1: 10 / 2; 0.03: 5 / 2; 0.01: 1 / 2; 0.003: 0 / 3. No divergence.
+The stop in step 3 fired: 0.003 has three not-learned seeds (13, 15, 19).
+Seeds 13 and 19 never reach 0.60 at any rate (best 0.51-0.57), so the
+learning rate is not the cause. 0.01's single collapse is seed 16: 0.602
+at round 1, 0.487 at round 4 (its only round below 0.50), 0.664 at the end.
+
+**Amendment 1 (2026-10-12, made AFTER seeing the screen results above,
+before any further run).** The rule did not foresee seeds that fail at
+every rate. Stability is the priority: if FedAvg collapses on its own,
+attack damage cannot be told apart from instability.
+- Seeds that are not-learned at every rate in the grid (13 and 19) are
+  *hard validation splits*: reported, and excluded from the stop condition.
+  They still count in A(r) (step 4), as pre-registered.
+- 0.003 gets the slow-rate extension: all 20 seeds re-run to 400 rounds
+  (collapse and not-learned judged over all 400 rounds).
+- If 0.003 then has zero collapsed seeds and every seed except the hard
+  splits learns, choose 0.003, with R* from the 400-round curves (A_end over
+  rounds 301-400). Otherwise choose 0.01 and disclose its single one-round
+  dip (seed 16), with R* from its 200-round curves as in step 4.
+
 ### Metrics (pre-registered 2026-10-11, before any grid run)
 
 - **Main average:** the stratified (within-region) C-index: the comparable
@@ -252,6 +273,10 @@ never used). C(r) = pooled validation C-index after round r.
   moves, so the number of deaths, not pairs, is the real amount of evidence.
   Canada's C-index rests on 3 pairs and one death. Fixed after seeing each
   region's death and pair counts, before any results.
+- **Gap** (best minus worst region): over the same 4 regions with at least
+  3 test deaths, for the same reason; a noisy region is as likely to be the
+  best as the worst (Canada scores 1.0 on 4 of FLamby's 5 seeds). Decided
+  2026-10-12, before any TCGA result.
 - All 6 regions still count in the average and each gets its own column in
   the appendix tables.
 
