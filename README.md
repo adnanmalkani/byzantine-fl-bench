@@ -254,6 +254,14 @@ attack damage cannot be told apart from instability.
   rounds 301-400). Otherwise choose 0.01 and disclose its single one-round
   dip (seed 16), with R* from its 200-round curves as in step 4.
 
+**Result (2026-10-12): lr 0.003, R\* = 243 rounds.** At 400 rounds, 0.003
+has no collapsed seed and every seed except the hard splits (13, 19)
+learns (seed 15 now reaches 0.60). Plateau rule on the 20-seed mean
+curve: A_end = 0.6925 (rounds 301-400), R* = 243 (A(243) = 0.6918). Mean
+validation C-index: 0.651 at round 50, 0.676 at 100, 0.690 at 200, 0.692
+at 400. Check: the first 200 rounds of every 400-round run equal the
+200-round runs exactly (`results_tables/lr_tcga.json`).
+
 ### Metrics (pre-registered 2026-10-11, before any grid run)
 
 - **Main average:** the stratified (within-region) C-index: the comparable
