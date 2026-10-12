@@ -41,11 +41,12 @@ PRESETS = {
     "fed_heart_disease": dict(n_clients=4, lr=0.001, batch_size=4,
                               local_steps=100, rounds=106, eval_every=1,
                               device="cpu"),  # tiny model: CPU beats MPS
-    # FLamby's FedAvg settings (Cox model, SGD lr 0.1, batch 8, 100 local
-    # steps). Rounds: FLamby's 5 (= (866 // 6 // 8) * 30 // 100) until the
-    # convergence rule sets the main setting.
-    "fed_tcga_brca": dict(n_clients=6, lr=0.1, batch_size=8, local_steps=100,
-                          rounds=5, eval_every=1, device="cpu"),
+    # Main setting (README, select_lr_tcga.py): FLamby's Cox model, batch 8,
+    # 100 local steps, but lr 0.003 and 243 rounds (pre-registered rule +
+    # Amendment 1). FLamby's own lr 0.1 / 5 rounds collapse on their own and
+    # are used only in reproduce_flamby_tcga.py.
+    "fed_tcga_brca": dict(n_clients=6, lr=0.003, batch_size=8, local_steps=100,
+                          rounds=243, eval_every=1, device="cpu"),
 }
 
 

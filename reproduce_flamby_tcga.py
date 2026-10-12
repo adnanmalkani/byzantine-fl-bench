@@ -1,7 +1,8 @@
 """Reproduce FLamby's published FedAvg baseline on Fed-TCGA-BRCA.
 
-Our side: sample-weighted FedAvg with FLamby's settings (tasks.PRESETS:
-Cox model, SGD lr 0.1, batch 8, 100 local steps) and FLamby's 5 rounds,
+Our side: sample-weighted FedAvg with FLamby's settings (Cox model, batch 8
+and 100 local steps from tasks.PRESETS; SGD lr 0.1 and 5 rounds pinned here,
+since the preset's main setting is lr 0.003 / 243 rounds),
 FLamby's seeds 42-46, last-round C-index (as FLamby reports): FLamby's
 pooled test set plus each region's own test set.
 Their side: method "FedAvg100" in FLamby's results CSVs (same seeds).
@@ -30,7 +31,7 @@ def ours():
     rows = []
     for s in SEEDS:
         r = run(make_config(dataset="fed_tcga_brca", aggregator="fedavg",
-                            weighted=True, rounds=5, seed=s), log=lambda *_: None)
+                            weighted=True, lr=0.1, rounds=5, seed=s), log=lambda *_: None)
         last = r["history"][-1]
         rows.append([last["acc"], *last["client_acc"]])
     return np.array(rows)

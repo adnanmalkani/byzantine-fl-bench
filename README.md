@@ -261,6 +261,12 @@ curve: A_end = 0.6925 (rounds 301-400), R* = 243 (A(243) = 0.6918). Mean
 validation C-index: 0.651 at round 50, 0.676 at 100, 0.690 at 200, 0.692
 at 400. Check: the first 200 rounds of every 400-round run equal the
 200-round runs exactly (`results_tables/lr_tcga.json`).
+Disclosure: seed 15 learns late. It first reaches 0.60 at round 286 (best
+0.607, final 0.598), so at the chosen 243 rounds it is still below 0.60.
+
+**Preset (2026-10-13):** `bench/tasks.py` uses lr 0.003 and 243 rounds for
+TCGA. `reproduce_flamby_tcga.py` pins FLamby's lr 0.1 and 5 rounds (its
+tables are byte-identical after the change).
 
 ### Metrics (pre-registered 2026-10-11, before any grid run)
 
