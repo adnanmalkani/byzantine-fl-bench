@@ -288,6 +288,31 @@ at 400. Check: the first 200 rounds of every 400-round run equal the
 - All 6 regions still count in the average and each gets its own column in
   the appendix tables.
 
+## Fed-ISIC2019 (FLamby, natural splits)
+
+Data terms (accept both before downloading): ISIC 2019, CC BY-NC 4.0
+(non-commercial, credit required),
+https://challenge.isic-archive.com/data/#2019, and HAM10000 (4 of the 6
+centres),
+https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DBW86T&version=3.0&selectTab=termsTab.
+Both must be credited in the paper.
+
+1. `sh setup_flamby.sh` installs the ISIC packages (exact versions, see the
+   script) and patches FLamby's download script to use `curl` with
+   certificate checks instead of `wget --no-check-certificate`.
+2. `sh download_isic.sh` downloads the images zip (9.8 GB) and the two CSVs
+   to `data/flamby/fed_isic2019/` and verifies them: CSV MD5s, exact zip
+   size, CRC-32 of every file in the zip, 25,331 images.
+3. FLamby's `download_isic.py` (command printed by step 2; asks for the
+   licence once) unzips, deletes the zip, drops the 2,084 images with no
+   centre and must report 23,247 images ("Download OK").
+4. FLamby's `resize_images.py` (shorter side 224 px, colour constancy).
+   CPU-heavy (32 parallel jobs), so not while a sweep runs.
+
+Disk: 9.8 GB download, about 19.5 GB at peak while unzipping, about 9 GB
+of original images afterwards, plus the preprocessed images and cached
+features (about 1 GB, estimated).
+
 ## Aggregator diagnostics
 
 Every run stores `diag`: per round, per client id, who the rule kept or
