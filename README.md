@@ -150,6 +150,11 @@ Results:
   bounds 0.06 and 0.04, below the 0.5-point margin), so **tau = 0.3**. Under
   v2 (no margin) the rule would have switched to tau = 3, where CC barely
   clips honest updates.
+- Fed-TCGA-BRCA (20 seeds, both variants, 243 rounds, validation C-index):
+  tau0 = 0.0246 -> 0.03. No grid value is better by the margin in either
+  variant (best: tau = 0.1, +0.10 / +0.14 points, CI lower bounds -0.15 /
+  -0.02), so **tau = 0.03**. tau = 0.1 and 0.3 give identical results, so
+  from 0.1 up CC no longer clips.
 
 **History (for transparency).** Rule v1 chose the smallest tau within 0.3
 points of the best validation accuracy, on a fixed grid {0.1, ..., 10}.
