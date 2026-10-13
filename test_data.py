@@ -55,12 +55,42 @@ def test_round_count_in_names_and_legacy_files():
     b = make_config(dataset="fed_heart_disease", rounds=15)
     assert "_r106_" in run_name(a) and run_name(a) != run_name(b)
     out = Path(tempfile.mkdtemp())
-    legacy = out / f"{run_name(a, rounds=False)}.json"     # old format, no round count
-    legacy.write_text(json.dumps({"config": {"rounds": 106}}))
+    legacy = out / f"{run_name(a, rounds=False, lr=False)}.json"  # old format, no round count
+    legacy.write_text(json.dumps({"config": {"rounds": 106, "lr": 0.001}}))
     assert result_path(out, b) == out / f"{run_name(b)}.json"
     assert legacy.exists() and not result_path(out, b).exists()  # 15 rounds: never reused
     p = result_path(out, a)                                 # 106 rounds: adopted
     assert p.exists() and not legacy.exists() and p.name == f"{run_name(a)}.json"
+
+
+def test_lr_in_names_and_legacy_files():
+    import json
+    import tempfile
+    from pathlib import Path
+
+    from bench.fl import make_config
+    from run import result_path
+    a = make_config(dataset="fed_tcga_brca")             # preset lr 0.003, 243 rounds
+    b = make_config(dataset="fed_tcga_brca", lr=0.1)
+    assert "_lr0.003_r243_" in run_name(a) and run_name(a) != run_name(b)
+    assert "_lr0.3_" in run_name(make_config(lr=0.1 + 0.2))  # no float noise
+    out = Path(tempfile.mkdtemp())
+    # Format without lr (2026-10-03 to 2026-10-13), stored lr 0.003: never
+    # reused for lr 0.1, adopted for lr 0.003
+    no_lr = out / f"{run_name(a, lr=False)}.json"
+    assert no_lr.name == f"{run_name(b, lr=False)}.json"      # the old collision
+    no_lr.write_text(json.dumps({"config": {"rounds": 243, "lr": 0.003}}))
+    assert not result_path(out, b).exists() and no_lr.exists()
+    p = result_path(out, a)
+    assert p.exists() and not no_lr.exists() and p.name == f"{run_name(a)}.json"
+    # Oldest format (no lr, no rounds): needs both to match
+    oldest = out / f"{run_name(b, rounds=False, lr=False)}.json"
+    oldest.write_text(json.dumps({"config": {"rounds": 243, "lr": 0.003}}))
+    assert not result_path(out, b).exists() and oldest.exists()   # lr differs
+    c = make_config(dataset="fed_tcga_brca", rounds=5)
+    assert not result_path(out, c).exists() and oldest.exists()   # rounds differ
+    oldest.write_text(json.dumps({"config": {"rounds": 243, "lr": 0.1}}))
+    assert result_path(out, b).exists() and not oldest.exists()   # both match
 
 
 def test_val_mode_end_to_end():
@@ -77,5 +107,6 @@ if __name__ == "__main__":
     test_tau_rule_v2_decision()
     test_run_names_tag_tuning_runs()
     test_round_count_in_names_and_legacy_files()
+    test_lr_in_names_and_legacy_files()
     test_val_mode_end_to_end()
     print("all tests passed")

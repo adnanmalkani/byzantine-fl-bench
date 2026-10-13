@@ -11,10 +11,11 @@ from pathlib import Path
 from bench.fl import Config, make_config, run
 
 
-def run_name(cfg: Config, rounds: bool = True) -> str:
-    # Optional parts are added only when set. The round count is always part
-    # of the name, so runs with different round counts can never collide;
-    # rounds=False gives the older format (before 2026-10-03), see result_path.
+def run_name(cfg: Config, rounds: bool = True, lr: bool = True) -> str:
+    # Optional parts are added only when set. The round count and learning
+    # rate are always part of the name, so runs differing in either can never
+    # collide. rounds=False / lr=False give the older formats (no round count
+    # before 2026-10-03, no lr before 2026-10-13), see result_path.
     fa = "" if cfg.f_assumed is None else f"_fa{cfg.f_assumed}"
     tau = f"_tau{cfg.cc_tau}" if cfg.aggregator == "cc" else ""
     ls = "" if cfg.local_steps is None else f"_ls{cfg.local_steps}"
@@ -22,19 +23,24 @@ def run_name(cfg: Config, rounds: bool = True) -> str:
     wt = "_w" if cfg.weighted else ""
     byz = f"_b{cfg.byz_frac}" if not cfg.byz_ids else f"_byz{cfg.byz_ids.replace(',', '-')}"
     r = f"_r{cfg.rounds}" if rounds else ""
+    lr_ = f"_lr{cfg.lr:g}" if lr else ""   # :g, so no float noise (0.003, not 0.0030000000000000001)
     return (f"{cfg.dataset}_a{cfg.alpha}_{cfg.aggregator}{wt}{tau}_{cfg.attack}"
-            f"{byz}{fa}{ls}{val}{r}_s{cfg.seed}")
+            f"{byz}{fa}{ls}{val}{lr_}{r}_s{cfg.seed}")
 
 
 def result_path(out: Path, cfg: Config) -> Path:
-    """Where cfg's result lives. A file in the older name format (no round
-    count) is renamed to the new name, but only if the round count stored
-    inside it matches cfg; otherwise it is left alone and never reused."""
+    """Where cfg's result lives. A file in an older name format (no lr, or
+    no lr and no round count) is renamed to the new name, but only if the
+    round count AND learning rate stored inside it match cfg; otherwise it is
+    left alone and never reused."""
     path = out / f"{run_name(cfg)}.json"
-    old = out / f"{run_name(cfg, rounds=False)}.json"
-    if not path.exists() and old.exists():
+    for old in (out / f"{run_name(cfg, lr=False)}.json",
+                out / f"{run_name(cfg, rounds=False, lr=False)}.json"):
+        if path.exists() or not old.exists():
+            continue
         try:
-            if json.loads(old.read_text())["config"].get("rounds") == cfg.rounds:
+            stored = json.loads(old.read_text())["config"]
+            if stored.get("rounds") == cfg.rounds and stored.get("lr") == cfg.lr:
                 old.rename(path)
         except FileNotFoundError:  # another process renamed it first
             pass
