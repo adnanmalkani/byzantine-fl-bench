@@ -7,7 +7,7 @@ import numpy as np
 import torch
 
 from .aggregators import check_valid, get_aggregator
-from .attacks import alie_z, apply_attack
+from .attacks import ALIE_FIXED_Z, alie_z, apply_attack
 from .tasks import PRESETS, SURVIVAL, load_task
 from .utils import flatten_params, get_device, load_flat_params, set_seed
 
@@ -116,12 +116,15 @@ def run(cfg: Config, log=print) -> dict:
     result = {"config": asdict(cfg), "f": f, "f_assumed": f_srv,
               "eval_split": "val" if cfg.val_frac > 0 else "test"}
     err = check_valid(cfg.aggregator, n, f_srv)
-    if cfg.attack == "alie" and f:
+    if cfg.attack in ("alie", *ALIE_FIXED_Z) and f:
         # z = 0: ALIE sends the mean of the benign updates (no attack); z = inf: undefined
-        # or NaN (attackers are more than half the clients), so the run is invalid
-        z = result["alie_z"] = alie_z(n, f)
+        # or NaN (attackers are more than half the clients), so the run is invalid.
+        # Fixed-z variants (alie_z1) are valid exactly where Baruch's z is; alie_z
+        # records the z actually used.
+        z = alie_z(n, f)
+        result["alie_z"] = ALIE_FIXED_Z.get(cfg.attack, z)
         if not np.isfinite(z):
-            err = err or f"alie undefined: z = {z} (n={n}, f={f})"
+            err = err or f"{cfg.attack} undefined: z = {z} (n={n}, f={f})"
     if err:
         return {**result, "status": "invalid", "reason": err}
 

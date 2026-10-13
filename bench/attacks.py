@@ -6,7 +6,12 @@ label_flip is data poisoning: those clients train on flipped labels instead.
 """
 import torch
 
-ATTACKS = ["none", "label_flip", "sign_flip", "gaussian", "alie", "ipm"]
+ATTACKS = ["none", "label_flip", "sign_flip", "gaussian", "alie", "alie_z1", "ipm"]
+# alie_z1 (pre-registered 2026-10-13, README): ALIE with a fixed z = 1. With few
+# hospitals Baruch's formula gives z <= 0.43 (0 at n = 4 or 6 with f = 1), so
+# "alie" barely leaves the honest spread; z = 1 tests an attacker that hides
+# one standard deviation out. Run wherever "alie" is defined; only z differs.
+ALIE_FIXED_Z = {"alie_z1": 1.0}
 
 
 def alie_z(n: int, f: int) -> float:
@@ -28,8 +33,9 @@ def apply_attack(name, honest, byz_own, n, f, gen, sigma=1.0, ipm_eps=0.5):
         return sigma * torch.randn(byz_own.shape, generator=gen)
     benign = torch.cat([honest, byz_own])
     mu, sd = benign.mean(0), benign.std(0)
-    if name == "alie":
-        return (mu - alie_z(n, f) * sd).expand_as(byz_own).clone()
+    if name in ("alie", *ALIE_FIXED_Z):
+        z = ALIE_FIXED_Z[name] if name in ALIE_FIXED_Z else alie_z(n, f)
+        return (mu - z * sd).expand_as(byz_own).clone()
     if name == "ipm":
         # Inner Product Manipulation (Xie et al., 2020)
         return (-ipm_eps * mu).expand_as(byz_own).clone()

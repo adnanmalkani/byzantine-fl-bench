@@ -25,10 +25,22 @@ conditions: same model, data splits, attacks and seeds.
 Trimmed Mean, Krum, Multi-Krum, Bulyan, Geometric Median (RFA), Centered
 Clipping.
 
-**Attacks (6):** none, label flipping (data poisoning), sign flipping,
-Gaussian noise, ALIE ("A Little Is Enough"), IPM (Inner Product
-Manipulation). Model-poisoning attackers are omniscient: they see all benign
-updates each round, a standard worst case.
+**Attacks (7):** none, label flipping (data poisoning), sign flipping,
+Gaussian noise, ALIE ("A Little Is Enough"), ALIE with a fixed z = 1
+(`alie_z1`), IPM (Inner Product Manipulation). Model-poisoning attackers are
+omniscient: they see all benign updates each round, a standard worst case.
+
+**`alie_z1` (pre-registered 2026-10-13, before any run with it).** ALIE
+sends mean − z × std of the benign updates, per coordinate. Baruch et al.'s
+formula sets z from n and f, and with few hospitals it gives z ≤ 0.43 (z = 0
+at n = 4 or 6 with f = 1, where ALIE just sends the benign mean). So the
+standard ALIE never really tests an attacker hiding inside the honest
+spread, which is the question here: can a defence tell an attacker from an
+honest hospital whose data is simply different? `alie_z1` fixes z = 1. It is
+run wherever ALIE is defined (same validity: invalid when attackers are half
+the clients or more) and differs only in z. Baruch's version (`alie`) is kept
+for comparability with the literature. Added to the heart grid (re-run for
+this attack only) and to the TCGA grid.
 
 **Knobs:** dataset (MNIST, Fashion-MNIST, CIFAR-10, plus a `synthetic`
 dataset for quick tests), non-IID level via Dirichlet alpha (0.1 = very
@@ -173,6 +185,9 @@ Setup: `sh setup_flamby.sh`, then download the data with FLamby's script
 - **Attackers:** enumerated, not random (`sweep.py --fs`): every hospital for
   f = 1, every pair for f = 2; each run records `byz_ids`.
 - **Seeds:** 20. `summarize.py` reports means with 95% CIs.
+- **`alie_z1` (2026-10-13):** the heart grid is re-run for this attack
+  only (same command as the grid with `--attacks alie_z1`; 3,200 grid
+  points, 1,040 that train). Nothing else in `results_heart` changes.
 - **Seeding fix (2026-10-04):** FLamby calls `torch.manual_seed(42)` when
   imported. It used to be imported lazily inside the first heart run of each
   process, after that run was seeded, so that run started from the seed-42
@@ -268,6 +283,22 @@ Disclosure: seed 15 learns late. It first reaches 0.60 at round 286 (best
 TCGA. `reproduce_flamby_tcga.py` pins FLamby's lr 0.1 and 5 rounds (its
 tables are byte-identical after the change).
 
+### Grid (decided 2026-10-13, before any grid run)
+
+`grid_tcga.sh <cc_tau> <i>/<N>` (one shard; run 8, i = 0..7, 1 torch thread
+each). Seeds only average out training randomness; the test sets are fixed,
+so the noise from few deaths per region doesn't shrink with more seeds.
+Seeds are therefore cut where they help least:
+- 20 seeds: clean runs (f_assumed = 0, 1, 2) and real attacks at f = 1
+  (sign flip, Gaussian, IPM, `alie_z1`; every region as the attacker).
+- 5 seeds: every attack at f = 2 (all 15 attacker pairs, so 75 runs per
+  configuration) and Baruch's ALIE at f = 1 (z = 0 at n = 6: degenerate, it
+  only needs to show it matches clean runs).
+- 15,120 grid points, 11,690 that train (the rest are invalid and finish at
+  once). About 25 h with 8 processes (`scaling_tcga.py`: 8 processes = 4.9×
+  one process).
+- CC tau from rule v2.1 on TCGA's validation split (below, "Tuning CC's tau").
+
 ### Metrics (pre-registered 2026-10-11, before any grid run)
 
 - **Main average:** the stratified (within-region) C-index: the comparable
@@ -313,7 +344,29 @@ Both must be credited in the paper.
    licence once) unzips, deletes the zip, drops the 2,084 images with no
    centre and must report 23,247 images ("Download OK").
 4. FLamby's `resize_images.py` (shorter side 224 px, colour constancy).
-   CPU-heavy (32 parallel jobs), so not while a sweep runs.
+   CPU-heavy (32 parallel jobs), so not while a sweep runs. Took 26 s here
+   (2026-10-13); 23,247 preprocessed images, all readable, 188 MB.
+5. ImageNet weights for EfficientNet-b0 (`efficientnet-pytorch` downloads
+   `efficientnet-b0-355c32eb.pth` from its GitHub release on first use,
+   21,388,428 bytes; its SHA-256 starts with 355c32eb, as the file name
+   says).
+
+### Main setting and reproduction (decided 2026-10-13)
+
+- **Main setting: frozen backbone.** ImageNet-pretrained EfficientNet-b0
+  (FLamby's model), frozen; features cached once per image, and only the
+  final layer is trained by federated learning. Features come from the
+  **centre crop only** (FLamby's test transform: centre crop 200 px,
+  normalise), with no training augmentation. Reason: the paper compares
+  aggregation rules on identical features, not the best absolute accuracy.
+  This is a limitation: accuracy will be below a fine-tuned, augmented model.
+  Our frozen-backbone numbers are reported as a new baseline; FLamby
+  published none for this setting.
+- **Reproduction:** FLamby's own FedAvg (full fine-tuning, augmentation,
+  Adam lr 5e-4, batch 64, 100 local steps, 9 rounds), 2 seeds, run after
+  the TCGA grid (about 1.5 h per seed on the GPU). Checked against FLamby's
+  published range: pooled balanced accuracy over seeds 42-46 is 0.330-0.593
+  (mean 0.534 ± 0.114; four seeds at 0.57-0.59, seed 46 at 0.33).
 
 Disk: 9.8 GB download, about 19.5 GB at peak while unzipping, about 9 GB
 of original images afterwards, plus the preprocessed images and cached
@@ -337,4 +390,6 @@ f = 1) the unweighted trimmed mean *is* the coordinate-wise median
 ## Known limitations / TODO
 
 - No client sampling, no adaptive attacks against specific defenses yet.
+- Fed-ISIC2019: frozen backbone, centre-crop features only (no
+  augmentation), so absolute accuracy is below FLamby's fine-tuned model.
 - Add FLTrust (needs a small server dataset) and a text dataset.

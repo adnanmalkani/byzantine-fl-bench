@@ -56,10 +56,31 @@ def test_alie_majority_run_is_invalid():
     assert res["status"] == "invalid" and "alie" in res["reason"], res
 
 
+def test_alie_z1():
+    # Fixed z = 1: one standard deviation below the benign mean, whatever n and f
+    from bench.attacks import apply_attack
+    from summarize import is_degenerate
+    g = torch.Generator().manual_seed(0)
+    honest, own = torch.randn(3, 5, generator=g), torch.randn(1, 5, generator=g)
+    benign = torch.cat([honest, own])
+    sent = apply_attack("alie_z1", honest, own, n=4, f=1, gen=g)
+    assert torch.allclose(sent, (benign.mean(0) - benign.std(0)).unsqueeze(0))
+    assert torch.allclose(apply_attack("alie", honest, own, n=4, f=1, gen=g),
+                          benign.mean(0).unsqueeze(0))       # Baruch's z = 0 here
+    # Valid exactly where ALIE is; records the z used; never degenerate
+    res = run(Config(dataset="synthetic", aggregator="fedavg", attack="alie_z1",
+                     n_clients=4, byz_frac=0.25, rounds=1, device="cpu"), log=lambda *_: None)
+    assert res["status"] == "ok" and res["alie_z"] == 1.0 and not is_degenerate(res), res
+    res = run(Config(dataset="synthetic", aggregator="fedavg", attack="alie_z1",
+                     n_clients=3, byz_frac=0.67, device="cpu"), log=lambda *_: None)
+    assert res["status"] == "invalid" and "alie_z1" in res["reason"], res
+
+
 if __name__ == "__main__":
     test_robust_rules_resist_outliers()
     test_validity_rules()
     test_median_even_and_odd()
     test_alie_z_positive()
     test_alie_majority_run_is_invalid()
+    test_alie_z1()
     print("all tests passed")
