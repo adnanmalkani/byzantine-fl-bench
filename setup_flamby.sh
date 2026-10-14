@@ -30,8 +30,10 @@ rm -f third_party/FLamby/flamby/datasets/fed_isic2019/dataset_creation_scripts/d
 SITE=$(.venv/bin/python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
 echo "$PWD/third_party/FLamby" > "$SITE/flamby.pth"
 
-# Imports of flamby.utils + fed_heart_disease (+ lifelines for fed_tcga_brca)
-.venv/bin/pip install -q scikit-learn matplotlib seaborn pyyaml tqdm wget lifelines
+# Imports of flamby.utils + fed_heart_disease (+ lifelines for fed_tcga_brca).
+# pandas < 3: FLamby's TCGA loader reads rows by position with Series[int],
+# which pandas 3 treats as a label (see requirements.txt).
+.venv/bin/pip install -q scikit-learn matplotlib seaborn pyyaml tqdm wget lifelines "pandas<3"
 .venv/bin/python -c "import flamby.datasets.fed_heart_disease as h; print('flamby OK, heart clients:', h.NUM_CLIENTS)"
 
 # fed_isic2019: opencv (colour constancy in preprocessing), albumentations and

@@ -1,4 +1,6 @@
 torch>=2.2
 torchvision>=0.17
 numpy
-pandas
+# pandas 3 changes Series[int] from position to label; FLamby's TCGA loader
+# relies on the old behaviour (2026-10-14). Results use 2.3.3.
+pandas<3
