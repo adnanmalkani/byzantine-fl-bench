@@ -32,6 +32,7 @@ from pathlib import Path
 import numpy as np
 
 from bench.fl import make_config, run
+from run import save_json
 
 LRS = [0.1, 0.03, 0.01, 0.003]
 SEEDS, ROUNDS, TOL = list(range(20)), 200, 0.005
@@ -55,7 +56,7 @@ def one_run(lr, seed, rounds=ROUNDS):
         if "NaN" not in str(e):
             raise
         out = {"lr": lr, "seed": seed, "error": str(e), "c": None, "loss": None}
-    path.write_text(json.dumps(out))
+    save_json(path, out)
     return out
 
 

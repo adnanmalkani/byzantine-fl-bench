@@ -9,10 +9,13 @@ Tables (results_tables/):
                                over hospitals), worst honest hospital (main),
                                worst hospital incl. attacker (appendix). Includes a clean
                                reference (f_assumed = 1) and the mean over the
-                               real attacks (per seed, then CI). ALIE at n = 4,
+                               real attacks (per seed, then CI): label flip,
+                               sign flip, Gaussian, IPM, alie_z1. ALIE at n = 4,
                                f = 1 has z = 0 and is marked degenerate.
   heart_attacker_f1_wide.csv   avg + worst honest, one column per attacker hospital
   heart_attacker_f1_wide_appendix.csv   worst hospital incl. the attacker
+  heart_attacker_f1_mean4_appendix{,_wide}.csv   the mean over the 4 real
+                               attacks used before alie_z1 was added (appendix)
   heart_exclusion_fa1.csv      clean runs, f_assumed = 1: per rule x weighting x
                                hospital, how much the rule down-weights it
   heart_exclusion_size_corr.csv  Spearman rho between hospital size and
@@ -49,7 +52,13 @@ from summarize import ci95, client_test_sizes, is_degenerate, run_metrics
 
 OUT = Path("results_tables")
 HOSPITALS = ["Cleveland", "Hungary", "Switzerland", "VA"]
-REAL_ATTACKS = ["label_flip", "sign_flip", "gaussian", "ipm"]  # alie: z = 0 at n=4, f=1
+# Real attacks averaged in "mean of real attacks" (alie: z = 0 at n=4, f=1, so
+# not an attack). alie_z1 joined on 2026-10-13, before its results were seen;
+# the earlier 4-attack mean is kept as an appendix table.
+REAL_ATTACKS = ["label_flip", "sign_flip", "gaussian", "ipm", "alie_z1"]
+REAL_ATTACKS_4 = ["label_flip", "sign_flip", "gaussian", "ipm"]
+MEAN_REAL = "mean of real attacks"
+MEAN_4 = "mean of 4 attacks (no alie_z1)"
 RATE_NAME = {"fedavg": "", "geomed": "rounds down-weighted", "median": "share of coords set",
              "trimmed_mean": "share of coords trimmed", "cc": "rounds clipped",
              "krum": "rounds excluded", "multi_krum": "rounds excluded",
@@ -137,8 +146,9 @@ def mean_ci(x):
     return x.mean(), ci95(x)
 
 
-def attacker_table(df: pd.DataFrame) -> pd.DataFrame:
-    """f = 1: one row per rule x weighting x attack x attacker hospital."""
+def attacker_table(df: pd.DataFrame, means=((MEAN_REAL, REAL_ATTACKS),)) -> pd.DataFrame:
+    """f = 1: one row per rule x weighting x attack x attacker hospital, plus
+    per (label, attacks) in `means` the mean over those attacks."""
     metrics = ["avg_acc", "worst_honest_acc", "worst_acc"]
     rows = []
 
@@ -158,15 +168,17 @@ def attacker_table(df: pd.DataFrame) -> pd.DataFrame:
     for (agg, wt, attack, attacker), g in att.groupby(["aggregator", "weighted", "attack", "attacker"]):
         add(g, attack, HOSPITALS[int(attacker)], bool(g.degenerate.any()))
     # mean over the real attacks: per seed first, so the CI is over seeds
-    real = att[att.attack.isin(REAL_ATTACKS)]
-    for (agg, wt, attacker), g in real.groupby(["aggregator", "weighted", "attacker"]):
-        if (g.status == "invalid").all():
-            per_seed = g.drop_duplicates("seed")
-        else:
-            per_seed = g.groupby("seed", as_index=False).agg(
-                {**{m: "mean" for m in metrics}, "aggregator": "first", "weighted": "first",
-                 "status": "first"})
-        add(per_seed, "mean of real attacks", HOSPITALS[int(attacker)], False)
+    for label, attacks in means:
+        real = att[att.attack.isin(attacks)]
+        assert set(real.attack) == set(attacks), f"{label}: missing {set(attacks) - set(real.attack)}"
+        for (agg, wt, attacker), g in real.groupby(["aggregator", "weighted", "attacker"]):
+            if (g.status == "invalid").all():
+                per_seed = g.drop_duplicates("seed")
+            else:
+                per_seed = g.groupby("seed", as_index=False).agg(
+                    {**{m: "mean" for m in metrics}, "aggregator": "first", "weighted": "first",
+                     "status": "first"})
+            add(per_seed, label, HOSPITALS[int(attacker)], False)
     clean = df[(df.attack == "none") & (df.f_assumed == 1)]
     for (agg, wt), g in clean.groupby(["aggregator", "weighted"]):
         add(g, "none (f_assumed=1)", "-", False)
@@ -315,12 +327,17 @@ def main():
     t.to_csv(OUT / "heart_attacker_f1.csv", index=False)
     wide(t).to_csv(OUT / "heart_attacker_f1_wide.csv")
     wide(t, ["worst_acc"]).to_csv(OUT / "heart_attacker_f1_wide_appendix.csv")
+    t4 = attacker_table(df, means=((MEAN_4, REAL_ATTACKS_4),))
+    t4 = t4[t4.attack == MEAN_4]
+    t4.to_csv(OUT / "heart_attacker_f1_mean4_appendix.csv", index=False)
+    wide(t4).to_csv(OUT / "heart_attacker_f1_mean4_appendix_wide.csv")
     ex, corr = exclusion_table(df)
     ex.to_csv(OUT / "heart_exclusion_fa1.csv", index=False)
     corr.to_csv(OUT / "heart_exclusion_size_corr.csv", index=False)
     fig_avg_vs_worst(df, 1)
     fig_avg_vs_worst(df, 0)
-    print("saved heart_attacker_f1{,_wide,_wide_appendix}.csv, heart_exclusion_fa1.csv, "
+    print("saved heart_attacker_f1{,_wide,_wide_appendix,_mean4_appendix,_mean4_appendix_wide}.csv, "
+          "heart_exclusion_fa1.csv, "
           "heart_exclusion_size_corr.csv, fig_heart_avg_vs_worst_fa{0,1}.{png,pdf} "
           f"in {OUT}/")
 

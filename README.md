@@ -193,6 +193,10 @@ Setup: `sh setup_flamby.sh`, then download the data with FLamby's script
 - **`alie_z1` (2026-10-13):** the heart grid is re-run for this attack
   only (same command as the grid with `--attacks alie_z1`; 3,200 grid
   points, 1,040 that train). Nothing else in `results_heart` changes.
+  `analyze_heart.py`'s "mean of real attacks" now includes `alie_z1` (label
+  flip, sign flip, Gaussian, IPM, `alie_z1`; decided before its results were
+  seen). The earlier 4-attack mean is kept as an appendix table
+  (`heart_attacker_f1_mean4_appendix*.csv`).
 - **Seeding fix (2026-10-04):** FLamby calls `torch.manual_seed(42)` when
   imported. It used to be imported lazily inside the first heart run of each
   process, after that run was seeded, so that run started from the seed-42
@@ -303,6 +307,11 @@ Seeds are therefore cut where they help least:
   once). About 25 h with 8 processes (`scaling_tcga.py`: 8 processes = 4.9×
   one process).
 - CC tau from rule v2.1 on TCGA's validation split (below, "Tuning CC's tau").
+- **Stopping and restarting:** `pkill -f grid_tcga.sh; pkill -f sweep.py`
+  (wrappers first, so they can't start their next sweep), then rerun the
+  same 8 commands. Each run's result is written once, at the end, and
+  atomically (temporary file, then rename), so a killed run leaves no
+  `.json` and is simply redone; finished runs are skipped.
 
 ### Metrics (pre-registered 2026-10-11, before any grid run)
 
@@ -369,9 +378,10 @@ Both must be credited in the paper.
   published none for this setting.
 - **Reproduction:** FLamby's own FedAvg (full fine-tuning, augmentation,
   Adam lr 5e-4, batch 64, 100 local steps, 9 rounds), 2 seeds, run after
-  the TCGA grid (about 1.5 h per seed on the GPU). Checked against FLamby's
-  published range: pooled balanced accuracy over seeds 42-46 is 0.330-0.593
-  (mean 0.534 ± 0.114; four seeds at 0.57-0.59, seed 46 at 0.33).
+  the TCGA grid (about 1.5 h per seed on the GPU). Check, as for TCGA: our
+  mean pooled balanced accuracy within one published std of FLamby's,
+  i.e. within 0.534 ± 0.114 = **0.420-0.648** (FLamby, seeds 42-46; four
+  seeds at 0.57-0.59, seed 46 at 0.33).
 
 Disk: 9.8 GB download, about 19.5 GB at peak while unzipping, about 9 GB
 of original images afterwards, plus the preprocessed images and cached

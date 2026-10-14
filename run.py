@@ -5,6 +5,7 @@ Example:
 """
 import argparse
 import json
+import os
 from dataclasses import fields
 from pathlib import Path
 
@@ -47,6 +48,15 @@ def result_path(out: Path, cfg: Config) -> Path:
     return path
 
 
+def save_json(path: Path, obj, **kw) -> None:
+    """Write a result atomically: to a temporary file first, then renamed into
+    place. A process killed mid-write leaves only the temporary file (never a
+    truncated .json that a sweep would count as done)."""
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(obj, **kw))
+    os.replace(tmp, path)
+
+
 def _bool(s: str) -> bool:
     return s.lower() in ("1", "true", "yes")
 
@@ -70,7 +80,7 @@ def main():
     res = run(cfg)
     out.mkdir(parents=True, exist_ok=True)
     path = result_path(out, cfg)
-    path.write_text(json.dumps(res, indent=2))
+    save_json(path, res, indent=2)
     print(res["status"], res.get("final_acc", res.get("reason")), "->", path)
 
 

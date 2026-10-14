@@ -93,6 +93,26 @@ def test_lr_in_names_and_legacy_files():
     assert result_path(out, b).exists() and not oldest.exists()   # both match
 
 
+def test_save_json_is_atomic():
+    import json
+    import tempfile
+    from pathlib import Path
+    from unittest import mock
+
+    from run import save_json
+    out = Path(tempfile.mkdtemp())
+    p = out / "r.json"
+    # Killed mid-write (simulated: the rename never happens): no .json appears
+    with mock.patch("os.replace", side_effect=KeyboardInterrupt):
+        try:
+            save_json(p, {"a": 1})
+        except KeyboardInterrupt:
+            pass
+    assert not p.exists() and not list(out.glob("*.json"))
+    save_json(p, {"a": 1})
+    assert json.loads(p.read_text()) == {"a": 1} and not list(out.glob("*.tmp"))
+
+
 def test_val_mode_end_to_end():
     res = run(Config(dataset="synthetic", rounds=1, val_frac=0.1, device="cpu"),
               log=lambda *_: None)
@@ -108,5 +128,6 @@ if __name__ == "__main__":
     test_run_names_tag_tuning_runs()
     test_round_count_in_names_and_legacy_files()
     test_lr_in_names_and_legacy_files()
+    test_save_json_is_atomic()
     test_val_mode_end_to_end()
     print("all tests passed")

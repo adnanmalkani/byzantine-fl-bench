@@ -36,7 +36,7 @@ import pandas as pd
 from scipy import stats
 
 from bench.fl import make_config, run
-from run import _bool, result_path
+from run import _bool, result_path, save_json
 from sweep import csv
 
 EARLY_ROUNDS = 10
@@ -87,7 +87,7 @@ def decide(acc: dict, tau0: float, margin: float = 0.005):
 def _run_or_load(cfg, path, mine):
     if not path.exists() and mine:
         print(f"running {path.stem}")
-        path.write_text(json.dumps(run(cfg, log=lambda *_: None), indent=2))
+        save_json(path, run(cfg, log=lambda *_: None), indent=2)
     if not path.exists():
         return None
     res = json.loads(path.read_text())

@@ -17,7 +17,7 @@ from pathlib import Path
 
 from bench.design import attacker_sets
 from bench.fl import make_config, run
-from run import _bool, result_path
+from run import _bool, result_path, save_json
 
 
 def csv(t):
@@ -89,7 +89,7 @@ def main():
         if a.dry_run:
             continue
         res = run(cfg, log=lambda *_: None)
-        path.write_text(json.dumps(res, indent=2))
+        save_json(path, res, indent=2)
         print("   ", res["status"], res.get("final_acc", res.get("reason")))
 
 

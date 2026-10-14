@@ -116,7 +116,13 @@ def test_attacker_table_pools_attacks_per_seed():
                              worst_acc=acc, worst_honest_acc=acc))
         rows.append(dict(aggregator="krum", weighted=False, attack="ipm", f=1, f_assumed=1,
                          seed=seed, attacker="2", status="invalid", degenerate=False))
-    t = attacker_table(pd.DataFrame(rows))
+    df = pd.DataFrame(rows)
+    try:  # default mean needs all 5 real attacks; this fake grid has only 2
+        attacker_table(df)
+        raise RuntimeError("missing attacks were not caught")
+    except AssertionError:
+        pass
+    t = attacker_table(df, means=(("mean of real attacks", ["sign_flip", "ipm"]),))
     pooled = t[(t.aggregator == "median") & (t.attack == "mean of real attacks")].iloc[0]
     assert pooled.attacker == "Switzerland" and pooled.n_seeds == 2
     assert math.isclose(pooled.avg_acc_mean, 65.0)    # alie (degenerate) not pooled
