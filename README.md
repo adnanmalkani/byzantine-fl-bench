@@ -380,6 +380,11 @@ Both must be credited in the paper.
    `efficientnet-b0-355c32eb.pth` from its GitHub release on first use,
    21,388,428 bytes; its SHA-256 starts with 355c32eb, as the file name
    says).
+6. `python extract_isic_features.py` caches the frozen-backbone features
+   (main setting, below) in `data/flamby/fed_isic2019/features_effb0_centercrop.pt`
+   (120 MB). 11 min on the Mac (2026-10-15); image decoding on the CPU,
+   not the GPU, sets the pace. 18,597 train and 4,650 test images in
+   FLamby's per-centre split; MPS features match CPU features to 1e-5.
 
 ### Main setting and reproduction (decided 2026-10-13)
 
