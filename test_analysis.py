@@ -4,7 +4,7 @@ import math
 import numpy as np
 import pandas as pd
 
-from analyze_heart import attacker_table, influence
+from analyze_heart import attacker_table, influence, wide
 from summarize import is_degenerate, run_metrics
 
 
@@ -131,10 +131,34 @@ def test_attacker_table_pools_attacks_per_seed():
     assert (t[t.aggregator == "krum"].status == "invalid").all()
 
 
+def test_attacker_table_pairs():
+    """f = 2 (TCGA): attacker pairs get joined region names; only f = 2 rows
+    and the f_assumed = 2 clean reference are used."""
+    names = ["Northeast", "South", "West", "Midwest", "Europe", "Canada"]
+    rows = []
+    for seed in (0, 1):
+        for f, attacker, acc in ((2, "0,2", 0.6), (2, "4,5", 0.8), (1, "3", 0.1)):
+            rows.append(dict(aggregator="cc", weighted=False, attack="ipm", f=f, f_assumed=f,
+                             seed=seed, attacker=attacker, status="ok", degenerate=False,
+                             avg_acc=acc, worst_acc=acc, worst_honest_acc=acc))
+        rows.append(dict(aggregator="cc", weighted=False, attack="none", f=0, f_assumed=2,
+                         seed=seed, attacker="-", status="ok", degenerate=False,
+                         avg_acc=0.9, worst_acc=0.9, worst_honest_acc=0.9))
+    t = attacker_table(pd.DataFrame(rows), means=(("mean", ["ipm"]),), names=names, f=2)
+    assert set(t.attacker) == {"Northeast+West", "Europe+Canada", "-"}
+    assert set(t.attack) == {"ipm", "mean", "none (f_assumed=2)"}
+    from analyze_tcga import PAIRS
+    assert len(PAIRS) == 15 and PAIRS[1] == "Northeast+West" and PAIRS[-1] == "Europe+Canada"
+    w = wide(t, names=PAIRS)
+    assert w.shape[1] == 2 * 15                     # one column per pair, in byz_ids order
+    assert w.dropna(axis=1).columns.get_level_values(1).tolist()[:2] == ["Northeast+West", "Europe+Canada"]
+
+
 if __name__ == "__main__":
     test_degenerate_flag()
     test_run_metrics_last3_and_honest_worst()
     test_survival_stratified_c_and_death_cutoff()
     test_influence_per_rule()
     test_attacker_table_pools_attacks_per_seed()
+    test_attacker_table_pairs()
     print("all tests passed")

@@ -196,7 +196,10 @@ Setup: `sh setup_flamby.sh`, then download the data with FLamby's script
   `analyze_heart.py`'s "mean of real attacks" now includes `alie_z1` (label
   flip, sign flip, Gaussian, IPM, `alie_z1`; decided before its results were
   seen). The earlier 4-attack mean is kept as an appendix table
-  (`heart_attacker_f1_mean4_appendix*.csv`).
+  (`heart_attacker_f1_mean4_appendix*.csv`). Result: `alie_z1` is the
+  mildest real attack on average, but the only one that leaves FedAvg
+  untouched while costing median, trimmed mean and geomed 7.6-8.8 points on
+  the worst honest hospital (2026-10-15).
 - **Seeding fix (2026-10-04):** FLamby calls `torch.manual_seed(42)` when
   imported. It used to be imported lazily inside the first heart run of each
   process, after that run was seeded, so that run started from the seed-42
@@ -338,6 +341,19 @@ Seeds are therefore cut where they help least:
   2026-10-12, before any TCGA result.
 - All 6 regions still count in the average and each gets its own column in
   the appendix tables.
+
+### Analysis (grid finished 2026-10-15)
+
+`python analyze_tcga.py` (about 10 s) writes `tcga_clean.csv`,
+`tcga_attacker_f1*.csv`, `tcga_attacker_f2*.csv` (the 15 pairs),
+`tcga_exclusion*_fa{1,2}.csv` and `fig_tcga_avg_vs_worst_fa{0,1,2}` to
+`results_tables/`. `python summarize.py results_tcga` gives the pooled
+summary. "Mean of real attacks": f = 1: sign flip, Gaussian, IPM,
+`alie_z1`; f = 2: the same plus Baruch's ALIE (z = 0.43 there).
+Caveat:
+FLamby's test split is easier than its training data (a plain Cox model
+scores 0.84 on it vs 0.72 in cross-validation on the training set), so
+absolute C-indices are high. Comparisons between rules are unaffected.
 
 ## Fed-ISIC2019 (FLamby, natural splits)
 

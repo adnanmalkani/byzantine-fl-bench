@@ -123,7 +123,7 @@ def _extract(path, test_sizes=None):
     return row
 
 
-def collect(folder: Path, rebuild=False) -> pd.DataFrame:
+def collect(folder: Path, rebuild=False, dataset="fed_heart_disease") -> pd.DataFrame:
     """One row per run; cached in results_tables/ (rebuilt when files change)."""
     files = sorted(folder.glob("*.json"))
     stamp = [len(files), max(p.stat().st_mtime for p in files)]
@@ -132,7 +132,7 @@ def collect(folder: Path, rebuild=False) -> pd.DataFrame:
         return pd.read_pickle(cache)
     print(f"parsing {len(files)} result files ...")
     with Pool(os.cpu_count()) as pool:
-        work = partial(_extract, test_sizes=client_test_sizes("fed_heart_disease"))
+        work = partial(_extract, test_sizes=client_test_sizes(dataset))
         rows = [x for x in pool.map(work, files, chunksize=64) if x is not None]
     df = pd.DataFrame(rows)
     OUT.mkdir(exist_ok=True)
@@ -146,9 +146,16 @@ def mean_ci(x):
     return x.mean(), ci95(x)
 
 
-def attacker_table(df: pd.DataFrame, means=((MEAN_REAL, REAL_ATTACKS),)) -> pd.DataFrame:
-    """f = 1: one row per rule x weighting x attack x attacker hospital, plus
-    per (label, attacks) in `means` the mean over those attacks."""
+def who(attacker, names=HOSPITALS) -> str:
+    """Attacker label from byz_ids: '3' -> 'VA', '0,2' -> 'Cleveland+Switzerland'."""
+    return "+".join(names[int(i)] for i in str(attacker).split(","))
+
+
+def attacker_table(df: pd.DataFrame, means=((MEAN_REAL, REAL_ATTACKS),), names=HOSPITALS,
+                   f=1) -> pd.DataFrame:
+    """One row per rule x weighting x attack x attacker hospital(s) at `f`,
+    plus per (label, attacks) in `means` the mean over those attacks, and the
+    clean reference (f_assumed = f)."""
     metrics = ["avg_acc", "worst_honest_acc", "worst_acc"]
     rows = []
 
@@ -164,9 +171,9 @@ def attacker_table(df: pd.DataFrame, means=((MEAN_REAL, REAL_ATTACKS),)) -> pd.D
                 row[f"{m}_mean"], row[f"{m}_ci95"] = mean_ci(g[m])
         rows.append(row)
 
-    att = df[(df.f == 1) & (df.attack != "none")]
+    att = df[(df.f == f) & (df.attack != "none")]
     for (agg, wt, attack, attacker), g in att.groupby(["aggregator", "weighted", "attack", "attacker"]):
-        add(g, attack, HOSPITALS[int(attacker)], bool(g.degenerate.any()))
+        add(g, attack, who(attacker, names), bool(g.degenerate.any()))
     # mean over the real attacks: per seed first, so the CI is over seeds
     for label, attacks in means:
         real = att[att.attack.isin(attacks)]
@@ -178,10 +185,10 @@ def attacker_table(df: pd.DataFrame, means=((MEAN_REAL, REAL_ATTACKS),)) -> pd.D
                 per_seed = g.groupby("seed", as_index=False).agg(
                     {**{m: "mean" for m in metrics}, "aggregator": "first", "weighted": "first",
                      "status": "first"})
-            add(per_seed, label, HOSPITALS[int(attacker)], False)
-    clean = df[(df.attack == "none") & (df.f_assumed == 1)]
+            add(per_seed, label, who(attacker, names), False)
+    clean = df[(df.attack == "none") & (df.f_assumed == f)]
     for (agg, wt), g in clean.groupby(["aggregator", "weighted"]):
-        add(g, "none (f_assumed=1)", "-", False)
+        add(g, f"none (f_assumed={f})", "-", False)
     t = pd.DataFrame(rows)
     order = {a: i for i, a in enumerate(RULE_LABELS)}
     t = t.sort_values(["aggregator", "weighted", "attack", "attacker"],
@@ -191,37 +198,39 @@ def attacker_table(df: pd.DataFrame, means=((MEAN_REAL, REAL_ATTACKS),)) -> pd.D
     return t.reset_index(drop=True)
 
 
-def wide(t: pd.DataFrame, metrics=("avg_acc", "worst_honest_acc")) -> pd.DataFrame:
-    """Cells 'mean ± ci' (points), columns: metric x attacker hospital."""
+def wide(t: pd.DataFrame, metrics=("avg_acc", "worst_honest_acc"), names=HOSPITALS) -> pd.DataFrame:
+    """Cells 'mean ± ci' (points), columns: metric x attacker hospital(s)
+    (`names`, e.g. pair labels 'A+B' for f = 2; None = the labels in t, sorted)."""
     t = t[t.attacker != "-"].copy()
+    names = list(names) if names is not None else list(dict.fromkeys(t.attacker))
     metrics = list(metrics)
     for m in metrics:
         t[m] = [("invalid" if s == "invalid" else f"{a:.1f} ± {c:.1f}")
                 for s, a, c in zip(t.status, t[f"{m}_mean"], t[f"{m}_ci95"])]
-    t["attack"] = t.attack + np.where(t.degenerate, " (degenerate, z=0)", "")
+    t["attack"] = t.attack + np.where(t.degenerate.astype(bool), " (degenerate, z=0)", "")
     w = t.pivot_table(index=["aggregator", "weighted", "attack"], columns="attacker",
                       values=metrics, aggfunc="first")
-    return w.reindex(columns=pd.MultiIndex.from_product([metrics, HOSPITALS]))
+    return w.reindex(columns=pd.MultiIndex.from_product([metrics, names]))
 
 
-def exclusion_table(df: pd.DataFrame):
-    """Clean runs, f_assumed = 1: who each rule down-weights, and size correlation."""
-    clean = df[(df.attack == "none") & (df.f_assumed == 1) & (df.status == "ok")]
+def exclusion_table(df: pd.DataFrame, names=HOSPITALS, f_assumed=1):
+    """Clean runs at f_assumed: who each rule down-weights, and size correlation."""
+    clean = df[(df.attack == "none") & (df.f_assumed == f_assumed) & (df.status == "ok")]
     rows, corr = [], []
     for (agg, wt), g in clean.groupby(["aggregator", "weighted"], sort=False):
         sizes = np.asarray(g.sizes.iloc[0], dtype=float)
         nom = sizes / sizes.sum() if wt else np.full(len(sizes), 1 / len(sizes))
         rel, rate, down, dist = (np.array(g[k].tolist())   # seeds x hospitals
                                  for k in ("rel", "rate", "down", "dist"))
-        for i, h in enumerate(HOSPITALS):
+        for i, h in enumerate(names):
             r_m, r_c = mean_ci(rel[:, i])
             rows.append(dict(aggregator=agg, weighted=wt, hospital=h, train_size=int(sizes[i]),
                              nominal_share=round(nom[i], 4), rate_name=RATE_NAME[agg],
                              rate_mean=rate[:, i].mean(), rel_influence_mean=r_m,
                              rel_influence_ci95=r_c, rounds_downweighted=down[:, i].mean(),
                              update_dist_mean=dist[:, i].mean()))
-        # Spearman rho between size and mean relative influence (4 hospitals:
-        # descriptive only; the smallest two-sided exact p-value is 2/24 = 0.083)
+        # Spearman rho between size and mean relative influence (descriptive
+        # only: 4 hospitals give a smallest two-sided exact p-value of 0.083)
         varies = rel.std() > 1e-6                     # fedavg: influence is 1 everywhere
         rho = stats.spearmanr(sizes, rel.mean(0)).statistic if varies else np.nan
         per_seed = np.array([stats.spearmanr(sizes, x).statistic for x in rel] if varies else [])
@@ -229,7 +238,7 @@ def exclusion_table(df: pd.DataFrame):
         corr.append(dict(aggregator=agg, weighted=wt, rho_size_vs_influence=rho,
                          seeds_rho_pos=int(np.sum(per_seed > 0)), seeds=len(rel),
                          rho_update_dist_vs_influence=rho_d,
-                         most_downweighted=HOSPITALS[int(rel.mean(0).argmin())] if varies else "-"))
+                         most_downweighted=names[int(rel.mean(0).argmin())] if varies else "-"))
     order = {a: i for i, a in enumerate(RULE_LABELS)}
     t = pd.DataFrame(rows).sort_values(["aggregator", "weighted"], key=lambda s: s.map(order)
                                        if s.name == "aggregator" else s, kind="stable")
@@ -271,9 +280,16 @@ def _place_labels(fig, ax, labels):
                                       fontsize=8, color=INK).get_window_extent(r))
 
 
-def fig_avg_vs_worst(df: pd.DataFrame, f_assumed=1):
-    """Clean runs: average (pooled test) vs worst-hospital accuracy, one point
-    per rule x weighting, 95% CI bars over seeds."""
+HEART_FIG = dict(prefix="fig_heart_avg_vs_worst", dataset="Fed-Heart-Disease",
+                 xlabel="Average accuracy over all hospitals' test patients (%)",
+                 ylabel="Worst-hospital accuracy (%)")
+
+
+def fig_avg_vs_worst(df: pd.DataFrame, f_assumed=1, prefix=HEART_FIG["prefix"],
+                     dataset=HEART_FIG["dataset"], xlabel=HEART_FIG["xlabel"],
+                     ylabel=HEART_FIG["ylabel"]):
+    """Clean runs: average vs worst-hospital metric, one point per rule x
+    weighting, 95% CI bars over seeds."""
     clean = df[(df.attack == "none") & (df.f_assumed == f_assumed) & (df.status == "ok")]
     fig, ax = plt.subplots(figsize=(5.2, 4.2))
     pts, labels = [], {}
@@ -302,14 +318,14 @@ def fig_avg_vs_worst(df: pd.DataFrame, f_assumed=1):
                  ha="left", va="top", wrap=True)
     ax.grid(color=GRID, linewidth=0.6)
     ax.set_axisbelow(True)
-    ax.set_xlabel("Average accuracy over all hospitals' test patients (%)")
-    ax.set_ylabel("Worst-hospital accuracy (%)")
-    ax.set_title(f"Fed-Heart-Disease, no attack, server assumes f = {f_assumed}",
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(f"{dataset}, no attack, server assumes f = {f_assumed}",
                  loc="left", fontsize=9, color=MUTED)
     handles = [plt.Line2D([], [], ls="", marker=m, ms=7, color=MUTED, mec="white", mew=1.5,
                           label=l) for m, l in (("o", "unweighted"), ("s", "weighted (w)"))]
     ax.legend(handles=handles, loc="lower right", fontsize=8)
-    save(fig, OUT / f"fig_heart_avg_vs_worst_fa{f_assumed}")
+    save(fig, OUT / f"{prefix}_fa{f_assumed}")
     return pd.DataFrame(pts, columns=["aggregator", "weighted", "avg_acc", "worst_acc"])
 
 
