@@ -410,6 +410,12 @@ Both must be credited in the paper.
   (imported by FLamby's strategies, used only for differential privacy
   and logging, both off) are not installed; placeholders that raise if
   called stand in for them.
+  One seed per process, appended to the log
+  (`nohup caffeinate -is .venv/bin/python reproduce_flamby_isic.py --seed 43
+  >> results_tables/flamby_isic_repro.log 2>&1 &`). PyTorch's GPU memory is
+  capped (`--mps_fraction`, default 0.8 of the recommended maximum) and
+  memory is printed every round, after seed 43 filled the 16 GB Mac
+  (2026-10-16).
 
 ### Main-setting rules (pre-registered 2026-10-16, before any run)
 
