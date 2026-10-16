@@ -416,6 +416,10 @@ Both must be credited in the paper.
   capped (`--mps_fraction`, default 0.8 of the recommended maximum) and
   memory is printed every round, after seed 43 filled the 16 GB Mac
   (2026-10-16).
+  **Result (2026-10-17): passed.** Mean pooled balanced accuracy 0.615
+  (seeds 42, 43: 0.639, 0.591), inside 0.420-0.648; every centre within
+  one published std (`results_tables/flamby_isic_repro.csv`; 162 and 187
+  min per seed).
 
 ### Main-setting rules (pre-registered 2026-10-16, before any run)
 
