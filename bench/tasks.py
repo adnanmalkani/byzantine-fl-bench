@@ -5,9 +5,15 @@ test set(s), model, loss and metric.
   split across n_clients with Dirichlet(alpha); one global test set.
 - FLamby datasets (natural splits, e.g. fed_heart_disease): one client per
   hospital, each with its own test set, plus FLamby's pooled test set.
+- fed_isic2019: frozen-backbone main setting (README): clients train only a
+  linear layer on cached EfficientNet-b0 features (extract_isic_features.py).
 """
+import os
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Callable, List, Optional, Tuple
+
+from pathlib import Path
 
 import torch
 import torch.nn.functional as F
@@ -27,8 +33,15 @@ try:
     from lifelines.utils import concordance_index
 except ImportError:  # FLamby not installed: image datasets only
     Baseline = FedHeartDisease = TcgaBaseline = CoxLoss = FedTcgaBrca = None
+os.environ.setdefault("NO_ALBUMENTATIONS_UPDATE", "1")  # albumentations: no network check
+try:  # needs FLamby's ISIC packages (setup_flamby.sh)
+    from flamby.datasets.fed_isic2019 import BaselineLoss as FocalLoss
+except ImportError:
+    FocalLoss = None
 
-FLAMBY = {"fed_heart_disease": 4, "fed_tcga_brca": 6}  # dataset -> number of centres
+FLAMBY = {"fed_heart_disease": 4, "fed_tcga_brca": 6, "fed_isic2019": 6}  # dataset -> centres
+ISIC_FEATURES = "data/flamby/fed_isic2019/features_effb0_centercrop.pt"
+ISIC_CLASSES = 8
 # Survival tasks: y = (event, time), metric = C-index; label flipping is undefined
 SURVIVAL = {"fed_tcga_brca"}
 
@@ -47,6 +60,11 @@ PRESETS = {
     # are used only in reproduce_flamby_tcga.py.
     "fed_tcga_brca": dict(n_clients=6, lr=0.003, batch_size=8, local_steps=100,
                           rounds=243, eval_every=1, device="cpu"),
+    # Frozen-backbone main setting: FLamby's batch 64 and 100 local steps, SGD
+    # (as everywhere here). lr and rounds: set by the pre-registered screen
+    # (README); None until then, so a run without them fails loudly.
+    "fed_isic2019": dict(n_clients=6, lr=None, batch_size=64, local_steps=100,
+                         rounds=None, eval_every=1, device="cpu"),
 }
 
 
@@ -60,6 +78,9 @@ class Task:
     metric: Callable                                  # (model, x, y) -> float
     num_classes: int
     client_names: List[str]
+    # Optional (model, x, y) -> correct predictions per class (ISIC: the
+    # worst-centre metric uses only classes with enough test images)
+    class_correct: Optional[Callable] = None
 
 
 @torch.no_grad()
@@ -88,6 +109,22 @@ def _c_index(model, x, y):
         return float(concordance_index(y[:, 1], -risk, y[:, 0]))
     except ZeroDivisionError:
         return float("nan")
+
+
+@torch.no_grad()
+def _balanced_accuracy(model, x, y):
+    # FLamby ISIC metric (sklearn's balanced_accuracy_score): mean recall over
+    # the classes present in y
+    model.eval()
+    pred = model(x).argmax(1)
+    return torch.stack([(pred[y == c] == c).float().mean() for c in torch.unique(y)]).mean().item()
+
+
+@torch.no_grad()
+def _class_correct(model, x, y):
+    model.eval()
+    hit = model(x).argmax(1) == y
+    return torch.bincount(y[hit], minlength=ISIC_CLASSES).tolist()
 
 
 def _image_task(cfg, device):
@@ -170,9 +207,43 @@ def _tcga_task(cfg, device):
                 client_names=["northeast", "south", "west", "midwest", "europe", "canada"])
 
 
+@lru_cache
+def isic_features(path=ISIC_FEATURES):
+    """{"train"/"test": [(X, y, names) per centre], "meta": ...}"""
+    assert Path(path).exists(), f"{path} missing: run extract_isic_features.py"
+    return torch.load(path, weights_only=True)
+
+
+def _isic_task(cfg, device):
+    assert FocalLoss is not None, "FLamby's ISIC packages missing: run setup_flamby.sh"
+    assert cfg.lr is not None and cfg.rounds is not None, \
+        "fed_isic2019: lr and rounds are not fixed yet (README); pass them explicitly"
+    d = isic_features()
+    n = FLAMBY[cfg.dataset]
+    clients = [(X.to(device), y.to(device)) for X, y, _ in d["train"]]
+    if cfg.val_frac > 0:
+        # Tuning mode: per-centre holdout stratified by class; metric on the
+        # pooled held-out images. Test sets never used.
+        client_tests = []
+        for c, (x, y) in enumerate(clients):
+            tr, va = train_val_split(y.cpu().numpy(), cfg.val_frac, cfg.seed + c)
+            tr, va = torch.as_tensor(tr, device=device), torch.as_tensor(va, device=device)
+            clients[c], client_tests = (x[tr], y[tr]), client_tests + [(x[va], y[va])]
+    else:
+        client_tests = [(X.to(device), y.to(device)) for X, y, _ in d["test"]]
+    pooled = tuple(torch.cat(t) for t in zip(*client_tests))   # FLamby's pooled test set
+    dim = clients[0][0].shape[1]
+    return Task(clients=clients, test=pooled, client_tests=client_tests,
+                build_model=lambda: torch.nn.Linear(dim, ISIC_CLASSES).to(device),
+                loss=FocalLoss(), metric=_balanced_accuracy, num_classes=ISIC_CLASSES,
+                client_names=[f"centre_{c}" for c in range(n)], class_correct=_class_correct)
+
+
 def load_task(cfg, device) -> Task:
     if cfg.dataset in FLAMBY:
         assert cfg.n_clients == FLAMBY[cfg.dataset], \
             f"{cfg.dataset} has {FLAMBY[cfg.dataset]} clients (n_clients={cfg.n_clients})"
+        if cfg.dataset == "fed_isic2019":
+            return _isic_task(cfg, device)
         return _tcga_task(cfg, device) if cfg.dataset in SURVIVAL else _heart_task(cfg, device)
     return _image_task(cfg, device)

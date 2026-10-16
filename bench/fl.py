@@ -139,6 +139,9 @@ def run(cfg: Config, log=print) -> dict:
     result.update(byz_ids=sorted(byz), client_names=task.client_names,
                   client_sizes=sizes,
                   client_test_sizes=[len(y) for _, y in task.client_tests or []])
+    if task.class_correct:
+        result["client_test_class_counts"] = [
+            torch.bincount(y, minlength=C).tolist() for _, y in task.client_tests]
 
     model = task.build_model()
     worker = task.build_model()
@@ -189,6 +192,9 @@ def run(cfg: Config, log=print) -> dict:
                 # nan-safe: a C-index is undefined on a set with no events
                 h["worst_acc"] = float(np.nanmin(h["client_acc"]))
                 h["gap"] = float(np.nanmax(h["client_acc"])) - h["worst_acc"]
+                if task.class_correct:
+                    h["client_class_correct"] = [task.class_correct(model, *t)
+                                                 for t in task.client_tests]
             history.append(h)
             log(f"round {r + 1:4d}  acc {h['acc']:.4f}  ({time.time() - t0:.0f}s)")
 

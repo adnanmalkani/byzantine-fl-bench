@@ -92,7 +92,7 @@ def main():
     out["meta"] = dict(weights=WEIGHTS.name, weights_sha256=WEIGHTS_SHA256,
                        transform="FLamby test transform: CenterCrop(200, 200), Normalize (ImageNet)",
                        feature="extract_features -> avg pool -> flatten (1280)",
-                       torch=torch.__version__, device=str(device), mps_vs_cpu_max_abs_diff=diff,
+                       torch=str(torch.__version__), device=str(device), mps_vs_cpu_max_abs_diff=diff,
                        n_images=total)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     tmp = OUT.with_name(OUT.name + ".tmp")

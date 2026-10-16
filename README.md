@@ -382,8 +382,7 @@ Both must be credited in the paper.
    says).
 6. `python extract_isic_features.py` caches the frozen-backbone features
    (main setting, below) in `data/flamby/fed_isic2019/features_effb0_centercrop.pt`
-   (120 MB). 11 min on the Mac (2026-10-15); image decoding on the CPU,
-   not the GPU, sets the pace. 18,597 train and 4,650 test images in
+   (120 MB). 11 min on the Mac (2026-10-15), cause not established; a one-off step. 18,597 train and 4,650 test images in
    FLamby's per-centre split; MPS features match CPU features to 1e-5.
 
 ### Main setting and reproduction (decided 2026-10-13)
@@ -397,12 +396,66 @@ Both must be credited in the paper.
   This is a limitation: accuracy will be below a fine-tuned, augmented model.
   Our frozen-backbone numbers are reported as a new baseline; FLamby
   published none for this setting.
-- **Reproduction:** FLamby's own FedAvg (full fine-tuning, augmentation,
-  Adam lr 5e-4, batch 64, 100 local steps, 9 rounds), 2 seeds, run after
-  the TCGA grid (about 1.5 h per seed on the GPU). Check, as for TCGA: our
+- **Reproduction:** `reproduce_flamby_isic.py`, FLamby's own FedAvg code
+  (full fine-tuning, augmentation, SGD lr 0.01, batch 64, 100 local steps,
+  9 rounds; `config_isic2019.json`), seeds 42 and 43, on the Mac's GPU
+  (about 1.8 h per seed). *Correction (2026-10-16, before any run):* this
+  line first said Adam lr 5e-4. That is FLamby's setting for its pooled
+  and local baselines; its FedAvg uses SGD lr 0.01 (config and published
+  results CSVs). Check, as for TCGA: our
   mean pooled balanced accuracy within one published std of FLamby's,
   i.e. within 0.534 ± 0.114 = **0.420-0.648** (FLamby, seeds 42-46; four
-  seeds at 0.57-0.59, seed 46 at 0.33).
+  seeds at 0.57-0.59, seed 46 at 0.33). Only change to FLamby's code:
+  the models run on MPS instead of CUDA/CPU. `opacus` and `tensorboard`
+  (imported by FLamby's strategies, used only for differential privacy
+  and logging, both off) are not installed; placeholders that raise if
+  called stand in for them.
+
+### Main-setting rules (pre-registered 2026-10-16, before any run)
+
+Adapter: `bench/tasks.py` (`fed_isic2019`): one client per centre, a
+linear layer (1280 -> 8, FLamby's final layer) on the cached features,
+FLamby's weighted focal loss, CPU. Every evaluation also records, per
+centre, the correct predictions per class (`client_class_correct`), so the
+worst-centre metric below is computed from stored counts.
+
+1. **Local optimizer: SGD**, as for heart and TCGA, not FLamby's Adam.
+   Reason: Adam rescales each coordinate of the update, which changes what
+   CC clips and what Krum picks; SGD keeps the rules' behaviour comparable
+   across the three datasets. The reproduction covers comparability with
+   FLamby. Batch 64 and 100 local steps (FLamby).
+2. **Learning rate:** a screen like TCGA's, on a validation split (10% of
+   each centre's training images, stratified by class; 1,859 images). The
+   definitions of "learned" and "collapse" for balanced accuracy (chance =
+   0.125) and the grid: *to be fixed before the screen runs.*
+3. **Rounds:** the heart plateau rule, on the chosen rate's 20 validation
+   curves (as for TCGA).
+4. **Seeds:** 20 everywhere if the runtime allows (measured: about 90 ms
+   per round on one CPU thread).
+5. **Metrics.** Main average: **one balanced accuracy over all centres'
+   test images pooled** (FLamby's pooled test set; ISIC has no per-centre
+   normalisation, and per-centre balanced accuracy averages over different
+   class sets). Worst centre: each centre's balanced accuracy over only
+   the classes with **at least k test images** at that centre; a centre
+   counts only if it has at least 2 such classes. *k: to be fixed
+   from the count table below, before any result.*
+6. **CC tau:** rule v2.1, unchanged.
+
+Test images per centre and class (FLamby's split):
+
+| Centre | MEL | NV | BCC | AK | BKL | DF | VASC | SCC | Total |
+|---|---|---|---|---|---|---|---|---|---|
+| 0 | 578 | 843 | 564 | 131 | 215 | 27 | 24 | 101 | 2,483 |
+| 1 | 4 | 743 | 0 | 0 | 28 | 7 | 9 | 0 | 791 |
+| 2 | 147 | 362 | 37 | 1 | 96 | 11 | 18 | 0 | 672 |
+| 3 | 66 | 154 | 73 | 23 | 84 | 10 | 0 | 42 | 452 |
+| 4 | 49 | 66 | 0 | 0 | 49 | 0 | 0 | 0 | 164 |
+| 5 | 9 | 74 | 0 | 0 | 4 | 0 | 1 | 0 | 88 |
+
+**Duplicates in the data:** 49 pairs of images are byte-identical under
+different ISIC IDs (identical cached features). 17 pairs straddle FLamby's
+train/test split (always within one centre) and 2 pairs carry different
+labels. FLamby's split is used as published.
 
 Disk: 9.8 GB download, about 19.5 GB at peak while unzipping, about 9 GB
 of original images afterwards, plus the preprocessed images and cached
