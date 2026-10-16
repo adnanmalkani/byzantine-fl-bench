@@ -471,6 +471,11 @@ worst-centre metric below is computed from stored counts.
    classes 8, 2, 6, 7, 3; centre 5 drops out (only NV has 10 images).
 6. **CC tau:** rule v2.1, unchanged.
 
+**Screen result (2026-10-17):** every rate had 20/20 seeds stable and
+learned, so the rule chose lr 0.3. The rounds rule then stopped: R* = 196
+at 200 rounds, and R* = 372 at 400 rounds, so no plateau within 400. The
+round count is not fixed yet (2026-10-17). Curves: `python plot_lr_isic.py`.
+
 **Running the screen:** `python select_lr_isic.py` (8 processes, one torch
 thread each; about 6 min on an otherwise idle Mac, about 2 min more if the
 400-round re-run is needed; resumes from `results_tune/lr_isic/`). Writes
