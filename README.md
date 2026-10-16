@@ -425,11 +425,29 @@ worst-centre metric below is computed from stored counts.
    across the three datasets. The reproduction covers comparability with
    FLamby. Batch 64 and 100 local steps (FLamby).
 2. **Learning rate:** a screen like TCGA's, on a validation split (10% of
-   each centre's training images, stratified by class; 1,859 images). The
-   definitions of "learned" and "collapse" for balanced accuracy (chance =
-   0.125) and the grid: *to be fixed before the screen runs.*
-3. **Rounds:** the heart plateau rule, on the chosen rate's 20 validation
-   curves (as for TCGA).
+   each centre's training images, stratified by class; 1,859 images; SE of
+   balanced accuracy about 0.025). Fixed on 2026-10-16, before
+   the screen ran (`select_lr_isic.py`):
+   - Clean sample-weighted FedAvg, rates {0.3, 0.1, 0.03, 0.01, 0.003},
+     seeds 0-19, 200 rounds, evaluated every round. B(r) = pooled
+     validation balanced accuracy (chance 0.125).
+   - *Divergence:* non-finite validation loss or balanced accuracy.
+   - *Learned:* B(r) >= 0.30 at some round (about 7 SE above chance,
+     roughly halfway to a central linear probe's 0.56).
+   - *Collapse:* divergence, or learned and then B(r') < 0.20 later (within
+     3 SE of chance; a model predicting one class scores 0.125). An
+     absolute rule, as TCGA's; the relative alternative (below half its
+     own best) was not chosen.
+   - *Not learned:* B(r) never reaches 0.30; reported, not a collapse.
+   - *Choice:* the largest rate with zero collapsed seeds. Stop if it has
+     any not-learned seed, or no rate qualifies.
+3. **Rounds:** the heart plateau rule on the chosen rate's 20 validation
+   curves: R* = the first round after which the mean curve A(r) stays
+   within 0.005 of A_end (the mean of A over rounds 151-200). If R* > 150,
+   the chosen rate is re-run to 400 rounds (the first 200 must match),
+   classified again over all 400 rounds (stop on any collapse or
+   not-learned seed), and R* is taken with A_end over rounds 301-400; if
+   that R* > 300, stop.
 4. **Seeds:** 20 everywhere if the runtime allows (measured: about 90 ms
    per round on one CPU thread).
 5. **Metrics.** Main average: **one balanced accuracy over all centres'
@@ -437,9 +455,17 @@ worst-centre metric below is computed from stored counts.
    normalisation, and per-centre balanced accuracy averages over different
    class sets). Worst centre: each centre's balanced accuracy over only
    the classes with **at least k test images** at that centre; a centre
-   counts only if it has at least 2 such classes. *k: to be fixed
-   from the count table below, before any result.*
+   counts only if it has at least 2 such classes. **k = 5** (fixed on 2026-10-16 from the count table below, before any result):
+   all 6 centres count, with 8, 4, 6, 7, 3 and 2 classes (centre 5, the
+   smallest: NV and MEL). Appendix sensitivity table with **k = 10**:
+   classes 8, 2, 6, 7, 3; centre 5 drops out (only NV has 10 images).
 6. **CC tau:** rule v2.1, unchanged.
+
+**Running the screen:** `python select_lr_isic.py` (8 processes, one torch
+thread each; about 6 min on an otherwise idle Mac, about 2 min more if the
+400-round re-run is needed; resumes from `results_tune/lr_isic/`). Writes
+`results_tables/lr_isic.json`. Not while a GPU job runs: with the
+reproduction running, one round took 0.4 s instead of 0.09 s.
 
 Test images per centre and class (FLamby's split):
 
@@ -452,10 +478,26 @@ Test images per centre and class (FLamby's split):
 | 4 | 49 | 66 | 0 | 0 | 49 | 0 | 0 | 0 | 164 |
 | 5 | 9 | 74 | 0 | 0 | 4 | 0 | 1 | 0 | 88 |
 
-**Duplicates in the data:** 49 pairs of images are byte-identical under
-different ISIC IDs (identical cached features). 17 pairs straddle FLamby's
-train/test split (always within one centre) and 2 pairs carry different
-labels. FLamby's split is used as published.
+**Duplicates in the data (disclosed; split kept as published, decided 2026-10-16):** 49 pairs of images are byte-identical under different
+ISIC IDs (original and preprocessed files; `python isic_duplicates.py`
+writes `results_tables/isic_duplicates.csv`). All pairs are within one
+centre: 28 inside a training set, 4 inside a test set, and **17 straddle
+FLamby's train/test split**, so 17 of 4,650 test images (0.4%) have an
+exact copy in training (`results_tables/isic_leaked_test.csv`):
+
+| Centre | MEL | NV | BCC | AK | BKL | Total |
+|---|---|---|---|---|---|---|
+| 0 | 3 | 4 | 3 | 2 | 4 | 16 (of 2,483) |
+| 5 | 0 | 1 | 0 | 0 | 0 | 1 (of 88) |
+
+Two pairs carry different labels: one straddling the split (test NV,
+training copy MEL, centre 0) and one inside centre 0's test set (NV and
+MEL). Inside training sets, 1-10 pairs per seed straddle the screen's
+train/validation split (seeds 0-19; validation has 1,859 images).
+**Planned sensitivity check:** the clean runs (every rule, both
+weightings, f_assumed 0/1/2, 20 seeds, R* rounds) repeated with the 17
+images removed from the test set; pooled balanced accuracy and the worst
+centre (k = 5) are reported against the main clean results.
 
 Disk: 9.8 GB download, about 19.5 GB at peak while unzipping, about 9 GB
 of original images afterwards, plus the preprocessed images and cached
