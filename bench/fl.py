@@ -34,6 +34,9 @@ class Config:
     ipm_eps: float = 0.5
     eval_every: int = 5
     val_frac: float = 0.0  # > 0: tuning mode, evaluate on held-out training data
+    # fed_isic2019 duplicates check: drop the 17 test images that have an exact
+    # copy in training (README); training is unchanged
+    drop_leaked: bool = False
     seed: int = 0
     device: str = "auto"
 

@@ -44,6 +44,8 @@ def main():
     p.add_argument("--local_steps", type=int, default=None)
     p.add_argument("--val_frac", type=float, default=0.0,
                    help="> 0: tuning mode, evaluate on held-out training data")
+    p.add_argument("--drop_leaked", action="store_true",
+                   help="fed_isic2019 duplicates check: drop the 17 leaked test images")
     p.add_argument("--shard", default="0/1",
                    help="i/N: run only every N-th grid point starting at i, so N "
                         "processes can split one grid without overlap")
@@ -78,6 +80,8 @@ def main():
 
     opt = dict(cc_tau=a.cc_tau, local_steps=a.local_steps, rounds=a.rounds, device=a.device)
     opt = {k: v for k, v in opt.items() if v is not None}
+    if a.drop_leaked:
+        opt["drop_leaked"] = True
     for k, kw in enumerate(grid, 1):
         if (k - 1) % shard_n != shard_i:
             continue

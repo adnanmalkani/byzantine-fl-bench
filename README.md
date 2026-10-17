@@ -537,6 +537,41 @@ train/validation split (seeds 0-19; validation has 1,859 images).
 weightings, f_assumed 0/1/2, 20 seeds, R* rounds) repeated with the 17
 images removed from the test set; pooled balanced accuracy and the worst
 centre (k = 5) are reported against the main clean results.
+*Implementation (2026-10-17):* `Config.drop_leaked` (`sweep.py
+--drop_leaked`) removes the 17 images (listed in `bench/tasks.py`,
+`ISIC_LEAKED_TEST`) from the test sets only; training is identical
+(checked in `test_isic.py` and again for every pair). Runs:
+`sh grid_isic.sh noleak 1.0 <i>/8` -> `results_isic_noleak/`;
+comparison: `python compare_isic_noleak.py` ->
+`results_tables/isic_noleak_check.csv`.
+
+### Grid (decided 2026-10-17, before any grid run)
+
+`grid_isic.sh main <cc_tau> <i>/<N>` (one shard; run 8, i = 0..7, 1 torch
+thread each), lr 0.01, 101 rounds, CC tau = 1 (rule v2.1):
+- 20 seeds: clean runs (f_assumed = 0, 1, 2), every real attack at f = 1
+  (label flip, sign flip, Gaussian, IPM, `alie_z1`; each centre as the
+  attacker) and every attack at f = 2 (all 15 attacker pairs, Baruch's
+  ALIE included).
+- 5 seeds: Baruch's ALIE at f = 1 (z = 0 at n = 6: degenerate, as for TCGA).
+- Why 20 seeds at f = 2 here but 5 for TCGA: ISIC is where the paper's
+  fairness (per-centre) claims must come from, since TCGA has only 32 test
+  deaths, so per-centre precision matters most here.
+- 39,840 grid points, 27,620 that train (the rest are invalid: Bulyan from
+  f = 1, Krum and Multi-Krum at f = 2; they finish at once). About 14 h
+  with 8 processes (measured 1.83 s of wall time per run).
+- Analysis: `python summarize.py results_isic` (pooled balanced accuracy;
+  worst centre with k = 5, and k = 10 as `*_k10`).
+
+Commands (from the repo folder):
+- **Launch** (8 shards, logs appended to `results_isic/shard_<i>.log`):
+  `mkdir -p results_isic && for i in 0 1 2 3 4 5 6 7; do nohup caffeinate -is sh grid_isic.sh main 1.0 $i/8 >> results_isic/shard_$i.log 2>&1 & done`
+- **Stop:** `pkill -f grid_isic.sh; pkill -f "sweep.py --datasets fed_isic2019"`
+  (wrappers first, so they can't start their next sweep). At most the 8
+  runs in progress are lost; results are written atomically (temporary
+  file, then rename), so a killed run leaves no `.json` and is redone.
+  Restart with the launch command; finished runs are skipped.
+- **Progress:** `echo "$(ls results_isic | grep -c '\.json$') / 39840"`
 
 Disk: 9.8 GB download, about 19.5 GB at peak while unzipping, about 9 GB
 of original images afterwards, plus the preprocessed images and cached

@@ -42,6 +42,16 @@ except ImportError:
 FLAMBY = {"fed_heart_disease": 4, "fed_tcga_brca": 6, "fed_isic2019": 6}  # dataset -> centres
 ISIC_FEATURES = "data/flamby/fed_isic2019/features_effb0_centercrop.pt"
 ISIC_CLASSES = 8
+# Test images with a byte-identical copy in a training set (isic_duplicates.py,
+# results_tables/isic_leaked_test.csv): 16 at centre 0, 1 at centre 5. Dropped
+# from the test sets only with Config.drop_leaked (duplicates check, README).
+ISIC_LEAKED_TEST = frozenset({
+    "ISIC_0053812", "ISIC_0056728", "ISIC_0057272", "ISIC_0061121", "ISIC_0061802",
+    "ISIC_0063304", "ISIC_0063677", "ISIC_0064007", "ISIC_0064300", "ISIC_0064545",
+    "ISIC_0065417", "ISIC_0067341", "ISIC_0067608", "ISIC_0067799", "ISIC_0067980",
+    "ISIC_0071855",   # centre 0
+    "ISIC_0024777",   # centre 5
+})
 # Survival tasks: y = (event, time), metric = C-index; label flipping is undefined
 SURVIVAL = {"fed_tcga_brca"}
 
@@ -231,6 +241,12 @@ def _isic_task(cfg, device):
             clients[c], client_tests = (x[tr], y[tr]), client_tests + [(x[va], y[va])]
     else:
         client_tests = [(X.to(device), y.to(device)) for X, y, _ in d["test"]]
+    if cfg.drop_leaked:
+        assert cfg.val_frac == 0, "drop_leaked applies to the test sets only"
+        keep = [torch.tensor([nm not in ISIC_LEAKED_TEST for nm in names], device=device)
+                for _, _, names in d["test"]]
+        assert sum(int((~k).sum()) for k in keep) == len(ISIC_LEAKED_TEST)
+        client_tests = [(x[k], y[k]) for (x, y), k in zip(client_tests, keep)]
     pooled = tuple(torch.cat(t) for t in zip(*client_tests))   # FLamby's pooled test set
     dim = clients[0][0].shape[1]
     return Task(clients=clients, test=pooled, client_tests=client_tests,
@@ -240,6 +256,7 @@ def _isic_task(cfg, device):
 
 
 def load_task(cfg, device) -> Task:
+    assert not cfg.drop_leaked or cfg.dataset == "fed_isic2019", "drop_leaked: ISIC only"
     if cfg.dataset in FLAMBY:
         assert cfg.n_clients == FLAMBY[cfg.dataset], \
             f"{cfg.dataset} has {FLAMBY[cfg.dataset]} clients (n_clients={cfg.n_clients})"

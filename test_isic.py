@@ -1,10 +1,16 @@
 """Checks for the Fed-ISIC2019 adapter (frozen-backbone features)."""
+from pathlib import Path
+
 import numpy as np
+import pandas as pd
 import torch
 from sklearn.metrics import balanced_accuracy_score
 
 from bench.fl import make_config, run
-from bench.tasks import _balanced_accuracy, _class_correct, isic_features, load_task
+from bench.tasks import (ISIC_LEAKED_TEST, _balanced_accuracy, _class_correct, isic_features,
+                         load_task)
+from run import run_name
+from summarize import isic_metrics, run_metrics
 
 TRAIN = [9930, 3163, 2691, 1807, 655, 351]   # FLamby's per-centre split
 TEST = [2483, 791, 672, 452, 164, 88]
@@ -81,9 +87,65 @@ def test_lr_and_rounds_must_be_given():
         pass
 
 
+def test_leaked_list_matches_duplicates_csv():
+    path = Path("results_tables/isic_leaked_test.csv")
+    if not path.exists():  # gitignored; written by isic_duplicates.py
+        print("skipped: run isic_duplicates.py to check the leaked list")
+        return
+    assert set(pd.read_csv(path).test_name) == ISIC_LEAKED_TEST and len(ISIC_LEAKED_TEST) == 17
+
+
+def test_drop_leaked_changes_test_sets_only():
+    kw = dict(dataset="fed_isic2019", aggregator="cc", lr=0.01, rounds=2, local_steps=5)
+    a = run(make_config(**kw), log=lambda *_: None)
+    b = run(make_config(**kw, drop_leaked=True), log=lambda *_: None)
+    removed = np.array(a["client_test_class_counts"]) - np.array(b["client_test_class_counts"])
+    # centre 0: MEL 3, NV 4, BCC 3, AK 2, BKL 4; centre 5: NV 1 (README)
+    assert removed[0].tolist() == [3, 4, 3, 2, 4, 0, 0, 0]
+    assert removed[5].tolist() == [0, 1, 0, 0, 0, 0, 0, 0] and removed[1:5].sum() == 0
+    assert a["diag"] == b["diag"]                       # training is identical
+    assert run_name(make_config(**kw, drop_leaked=True)).endswith("_lr0.01_r2_s0")
+    assert "_noleak" in run_name(make_config(**kw, drop_leaked=True))
+    assert "_noleak" not in run_name(make_config(**kw))
+    for e in (dict(val_frac=0.1), dict(dataset="fed_tcga_brca")):
+        try:
+            load_task(make_config(**{**kw, **e}, drop_leaked=True), torch.device("cpu"))
+            raise RuntimeError("drop_leaked accepted outside ISIC test sets")
+        except AssertionError:
+            pass
+
+
+def test_isic_worst_centre_metric():
+    # Hand example: 3 centres, 8 classes; one evaluation
+    counts = [[10, 6, 4, 0, 0, 0, 0, 0],    # k=5: classes 0,1; k=10: class 0 only -> out
+              [20, 20, 20, 0, 0, 0, 0, 0],  # all classes count at both k
+              [5, 9, 0, 0, 0, 0, 0, 0]]     # k=5: both; k=10: none -> out
+    correct = [[5, 3, 4, 0, 0, 0, 0, 0], [20, 10, 0, 0, 0, 0, 0, 0], [5, 0, 0, 0, 0, 0, 0, 0]]
+    r = {"history": [{"acc": 0.4, "client_class_correct": correct}],
+         "client_test_class_counts": counts, "byz_ids": [1]}
+    m = isic_metrics(r, last=1)
+    ba5 = [(0.5 + 0.5) / 2, (1 + 0.5 + 0) / 3, (1 + 0) / 2]
+    assert np.allclose(m["client_acc"], ba5) and m["avg_acc"] == 0.4
+    assert np.isclose(m["worst_acc"], 0.5) and np.isclose(m["gap"], 0.0)
+    assert np.isclose(m["worst_honest_acc"], 0.5)          # centre 1 excluded (attacker)
+    assert np.isclose(m["worst_acc_k10"], 0.5) and np.isclose(m["gap_k10"], 0.0)
+    assert np.isnan(m["worst_honest_acc_k10"])             # only centre 1 counts, an attacker
+    # Real run: centre 0 has >= 24 test images of every class, so k changes
+    # nothing there and the k-rule accuracy equals the recorded one
+    real = run(make_config(dataset="fed_isic2019", lr=0.01, rounds=3, local_steps=5),
+               log=lambda *_: None)
+    m = run_metrics(real)
+    assert np.isclose(m["client_acc"][0], np.mean([h["client_acc"][0] for h in real["history"]]))
+    assert np.isclose(m["avg_acc"], real["final_acc"])
+    assert m["worst_acc"] <= min(m["client_acc"]) + 1e-12
+
+
 if __name__ == "__main__":
     test_metric_matches_sklearn()
     test_task_sizes_and_validation_split()
     test_run_records_class_counts()
     test_lr_and_rounds_must_be_given()
+    test_leaked_list_matches_duplicates_csv()
+    test_drop_leaked_changes_test_sets_only()
+    test_isic_worst_centre_metric()
     print("all tests passed")

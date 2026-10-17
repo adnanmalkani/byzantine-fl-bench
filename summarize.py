@@ -20,6 +20,13 @@ Survival data (TCGA, metric = C-index): avg_acc is the stratified C-index
 (within-region comparable pairs pooled = per-region C-indices weighted by
 pairs); worst_honest_acc, worst_acc and gap only count regions with >= 3
 test deaths (Northeast, South, West, Midwest). All regions stay in avg_acc.
+Fed-ISIC2019 (README, pre-registered 2026-10-16): avg_acc is one balanced
+accuracy over all centres' test images pooled (FLamby's pooled test set).
+Per-centre accuracy is the balanced accuracy over only the classes with at
+least k test images at that centre, and a centre counts only with >= 2 such
+classes; computed from the stored per-class counts. k = 5 gives
+worst_honest_acc, worst_acc and gap (main); k = 10 gives the same three with
+a _k10 suffix (appendix; centre 5 drops out).
 95% CI uses the t distribution over runs (seeds, or seeds x attacker sets
 when pooled). Tuning runs (evaluated on a validation split) are skipped.
 
@@ -41,10 +48,12 @@ from scipy import stats
 
 KEYS = ["dataset", "alpha", "rounds", "attack", "degenerate", "byz_frac", "f",
         "f_assumed", "aggregator", "weighted", "cc_tau"]
-METRICS = ["final_acc", "avg_acc", "worst_honest_acc", "worst_acc", "gap"]
+METRICS = ["final_acc", "avg_acc", "worst_honest_acc", "worst_acc", "gap",
+           "worst_honest_acc_k10", "worst_acc_k10", "gap_k10"]
 LAST = 3  # evaluations averaged for every metric
 SURVIVAL = {"fed_tcga_brca"}  # C-index datasets (same set as bench.tasks.SURVIVAL)
 MIN_DEATHS = 3  # survival: a region counts in worst-region metrics only with >= 3 test deaths
+ISIC_K = {"": 5, "_k10": 10}  # ISIC: metric suffix -> min test images per class (README)
 
 
 def is_degenerate(r: dict) -> bool:
@@ -82,6 +91,28 @@ def client_test_survival(dataset: str) -> tuple:
     return tuple(pairs), tuple(deaths)
 
 
+def isic_metrics(r: dict, last: int = LAST) -> dict:
+    """Fed-ISIC2019: pooled balanced accuracy, and the worst-centre metrics for
+    each k in ISIC_K from the stored per-class correct counts."""
+    hist = r["history"][-last:]
+    counts = np.asarray(r["client_test_class_counts"], dtype=float)    # centres x classes
+    correct = np.array([h["client_class_correct"] for h in hist], dtype=float)
+    out = {"avg_acc": float(np.mean([h["acc"] for h in hist]))}
+    byz = set(r.get("byz_ids", []))
+    for suffix, k in ISIC_K.items():
+        use = counts >= k                                    # classes that count, per centre
+        eligible = use.sum(1) >= 2
+        recall = np.divide(correct, counts, out=np.zeros_like(correct), where=counts > 0)
+        ba = np.where(eligible, (recall * use).sum(2) / np.maximum(use.sum(1), 1), np.nan)
+        honest = [i for i in range(len(counts)) if i not in byz and eligible[i]]
+        out[f"worst_honest_acc{suffix}"] = float(ba[:, honest].min(1).mean()) if honest else np.nan
+        out[f"worst_acc{suffix}"] = float(ba[:, eligible].min(1).mean())
+        out[f"gap{suffix}"] = float((ba[:, eligible].max(1) - ba[:, eligible].min(1)).mean())
+        if k == ISIC_K[""]:
+            out["client_acc"] = ba.mean(0).tolist()
+    return out
+
+
 def run_metrics(r: dict, last: int = LAST, test_sizes=None, survival=None) -> dict:
     """Per-run metrics, each averaged over the last `last` evaluations.
     Natural splits: avg_acc replaces final_acc (FLamby's pooled test set).
@@ -90,6 +121,8 @@ def run_metrics(r: dict, last: int = LAST, test_sizes=None, survival=None) -> di
     C-indices weighted by comparable pairs, and the worst-region metrics only
     and the gap only count regions with >= MIN_DEATHS test deaths (README)."""
     hist = r["history"][-last:]
+    if "client_class_correct" in hist[0]:
+        return isic_metrics(r, last)
     out = {"final_acc": float(np.mean([h["acc"] for h in hist]))}
     if "client_acc" in hist[0]:
         C = np.array([h["client_acc"] for h in hist], dtype=float)   # evals x hospitals
