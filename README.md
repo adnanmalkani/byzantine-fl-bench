@@ -450,7 +450,8 @@ worst-centre metric below is computed from stored counts.
      own best) was not chosen.
    - *Not learned:* B(r) never reaches 0.30; reported, not a collapse.
    - *Choice:* the largest rate with zero collapsed seeds. Stop if it has
-     any not-learned seed, or no rate qualifies.
+     any not-learned seed, or no rate qualifies. *(Amended 2026-10-17
+     when every rate is stable; see Amendment 2 below.)*
 3. **Rounds:** the heart plateau rule on the chosen rate's 20 validation
    curves: R* = the first round after which the mean curve A(r) stays
    within 0.005 of A_end (the mean of A over rounds 151-200). If R* > 150,
@@ -473,8 +474,26 @@ worst-centre metric below is computed from stored counts.
 
 **Screen result (2026-10-17):** every rate had 20/20 seeds stable and
 learned, so the rule chose lr 0.3. The rounds rule then stopped: R* = 196
-at 200 rounds, and R* = 372 at 400 rounds, so no plateau within 400. The
-round count is not fixed yet (2026-10-17). Curves: `python plot_lr_isic.py`.
+at 200 rounds, and R* = 372 at 400 rounds, so no plateau within 400.
+Curves: `python plot_lr_isic.py`.
+
+**Amendment 2 (2026-10-17, made after seeing the screen).** The "largest
+stable rate" rule assumes that fast rates collapse, as they did on TCGA.
+On ISIC no rate collapsed, so the rule only selects the top of the grid.
+New rule for datasets where every rate in the grid is stable: use the
+source benchmark's published FedAvg rate if it is in the grid and stable;
+then apply the plateau rule (rule 3) unchanged.
+- ISIC: FLamby's FedAvg rate is SGD lr 0.01 (in the grid, 20/20 seeds
+  stable). Plateau rule on its 200-round curves: A_end = 0.542 (rounds
+  151-200), **R* = 101** (no re-run needed). **Main setting: lr 0.01,
+  101 rounds** (preset in `bench/tasks.py`).
+- Rejected: (A) lr 0.3 with rounds at the peak of the mean curve: a new
+  stopping rule, and the peak (round 111) is noise shared by all rates
+  (same batch order); (C) lr 0.3 with a wider plateau tolerance: the
+  tolerance would then differ from heart and TCGA; lr 0.003 (best on
+  validation, R* = 62): at the edge of the grid, so it would call for
+  extending the search, and picking the top scorer invites the winner's
+  curse.
 
 **Running the screen:** `python select_lr_isic.py` (8 processes, one torch
 thread each; about 6 min on an otherwise idle Mac, about 2 min more if the

@@ -71,9 +71,12 @@ def test_run_records_class_counts():
 
 
 def test_lr_and_rounds_must_be_given():
+    # Preset fixed by the screen + Amendment 2 (README, 2026-10-17)
+    cfg = make_config(dataset="fed_isic2019")
+    assert (cfg.lr, cfg.rounds) == (0.01, 101)
     try:
-        run(make_config(dataset="fed_isic2019"), log=lambda *_: None)
-        raise RuntimeError("ran without lr and rounds")
+        run(make_config(dataset="fed_isic2019", lr=None, rounds=1), log=lambda *_: None)
+        raise RuntimeError("ran without lr")
     except (AssertionError, TypeError):
         pass
 

@@ -61,10 +61,10 @@ PRESETS = {
     "fed_tcga_brca": dict(n_clients=6, lr=0.003, batch_size=8, local_steps=100,
                           rounds=243, eval_every=1, device="cpu"),
     # Frozen-backbone main setting: FLamby's batch 64 and 100 local steps, SGD
-    # (as everywhere here). lr and rounds: set by the pre-registered screen
-    # (README); None until then, so a run without them fails loudly.
-    "fed_isic2019": dict(n_clients=6, lr=None, batch_size=64, local_steps=100,
-                         rounds=None, eval_every=1, device="cpu"),
+    # (as everywhere here). lr 0.01 (FLamby's FedAvg rate) and 101 rounds: the
+    # screen (select_lr_isic.py) + Amendment 2 (README, 2026-10-17).
+    "fed_isic2019": dict(n_clients=6, lr=0.01, batch_size=64, local_steps=100,
+                         rounds=101, eval_every=1, device="cpu"),
 }
 
 
@@ -217,7 +217,7 @@ def isic_features(path=ISIC_FEATURES):
 def _isic_task(cfg, device):
     assert FocalLoss is not None, "FLamby's ISIC packages missing: run setup_flamby.sh"
     assert cfg.lr is not None and cfg.rounds is not None, \
-        "fed_isic2019: lr and rounds are not fixed yet (README); pass them explicitly"
+        "fed_isic2019: lr and rounds must be set (preset: README, Amendment 2)"
     d = isic_features()
     n = FLAMBY[cfg.dataset]
     clients = [(X.to(device), y.to(device)) for X, y, _ in d["train"]]
