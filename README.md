@@ -155,6 +155,11 @@ Results:
   variant (best: tau = 0.1, +0.10 / +0.14 points, CI lower bounds -0.15 /
   -0.02), so **tau = 0.03**. tau = 0.1 and 0.3 give identical results, so
   from 0.1 up CC no longer clips.
+- Fed-ISIC2019 (20 seeds, both variants, lr 0.01, 101 rounds, validation
+  balanced accuracy): tau0 = 1.066 -> 1. No grid value is better by the
+  margin (best: tau = 3, +0.12 / +0.02 points, CI lower bounds +0.01 /
+  -0.22), so **tau = 1**. At tau = 1, CC clips 21% (unweighted) and 39%
+  (weighted) of honest updates; from tau = 3 up it clips none.
 
 **History (for transparency).** Rule v1 chose the smallest tau within 0.3
 points of the best validation accuracy, on a fixed grid {0.1, ..., 10}.
