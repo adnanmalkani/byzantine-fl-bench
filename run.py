@@ -22,12 +22,13 @@ def run_name(cfg: Config, rounds: bool = True, lr: bool = True) -> str:
     ls = "" if cfg.local_steps is None else f"_ls{cfg.local_steps}"
     val = f"_val{cfg.val_frac}" if cfg.val_frac > 0 else ""
     val += "_noleak" if cfg.drop_leaked else ""
+    ex = f"_ex{cfg.exclude_ids.replace(',', '-')}" if cfg.exclude_ids else ""
     wt = "_w" if cfg.weighted else ""
     byz = f"_b{cfg.byz_frac}" if not cfg.byz_ids else f"_byz{cfg.byz_ids.replace(',', '-')}"
     r = f"_r{cfg.rounds}" if rounds else ""
     lr_ = f"_lr{cfg.lr:g}" if lr else ""   # :g, so no float noise (0.003, not 0.0030000000000000001)
     return (f"{cfg.dataset}_a{cfg.alpha}_{cfg.aggregator}{wt}{tau}_{cfg.attack}"
-            f"{byz}{fa}{ls}{val}{lr_}{r}_s{cfg.seed}")
+            f"{byz}{ex}{fa}{ls}{val}{lr_}{r}_s{cfg.seed}")
 
 
 def result_path(out: Path, cfg: Config) -> Path:

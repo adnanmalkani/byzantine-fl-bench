@@ -37,6 +37,9 @@ class Config:
     # fed_isic2019 duplicates check: drop the 17 test images that have an exact
     # copy in training (README); training is unchanged
     drop_leaked: bool = False
+    # Leave-out controls (2026-10-18): these clients neither train
+    # nor send, but their test sets are still evaluated; e.g. "0" or "0,2"
+    exclude_ids: Optional[str] = None
     seed: int = 0
     device: str = "auto"
 
@@ -86,7 +89,14 @@ def _eval_loss(model, loss_fn, x, y, bs=1000):
     return total / len(y)
 
 
-def _by_client(info, order):
+# Rules whose output does not depend on f. In a clean leave-out control there
+# is no attacker, so the count check (n > 2f, which guards against attackers)
+# is skipped for them; rules that use f keep it (trimmed mean at n = 4, f = 2
+# would trim every value).
+F_FREE = {"fedavg", "median", "geomed", "cc"}
+
+
+def _by_client(info, order, n):
     """Re-index aggregator diagnostics from rows of U to client ids:
     per-row lists become lists indexed by client id; selected row indices
     become client ids."""
@@ -95,7 +105,7 @@ def _by_client(info, order):
         if k == "selected":
             out[k] = sorted(order[j] for j in v)
         else:
-            col = [None] * len(order)
+            col = [None] * n
             for j, x in enumerate(v):
                 col[order[j]] = x
             out[k] = col
@@ -113,12 +123,20 @@ def run(cfg: Config, log=print) -> dict:
     else:
         byz_fixed, f = None, int(round(cfg.byz_frac * n))
     f_srv = f if cfg.f_assumed is None else cfg.f_assumed
+    excl = sorted({int(i) for i in cfg.exclude_ids.split(",")}) if cfg.exclude_ids else []
+    if excl:
+        assert cfg.attack == "none" and f == 0, "leave-out controls are clean runs"
+        assert all(0 <= i < n for i in excl) and len(excl) < n, cfg.exclude_ids
 
     if cfg.attack == "label_flip" and cfg.dataset in SURVIVAL:
         raise ValueError(f"label_flip is undefined for survival data ({cfg.dataset})")
     result = {"config": asdict(cfg), "f": f, "f_assumed": f_srv,
               "eval_split": "val" if cfg.val_frac > 0 else "test"}
-    err = check_valid(cfg.aggregator, n, f_srv)
+    err = check_valid(cfg.aggregator, n - len(excl), f_srv)
+    if excl:
+        result["excluded_ids"] = excl
+        if cfg.aggregator in F_FREE:
+            err = None
     if cfg.attack in ("alie", *ALIE_FIXED_Z) and f:
         # z = 0: ALIE sends the mean of the benign updates (no attack); z = inf: undefined
         # or NaN (attackers are more than half the clients), so the run is invalid.
@@ -155,7 +173,8 @@ def run(cfg: Config, log=print) -> dict:
     history, t0 = [], time.time()
     # Rows of U are honest clients first, then Byzantine ones; `order` maps
     # each row back to its client id (for weights and per-client logging)
-    order = [i for i in range(n) if i not in byz] + [i for i in range(n) if i in byz]
+    order = [i for i in range(n) if i not in byz and i not in excl] + \
+            [i for i in range(n) if i in byz]
     w = torch.tensor([float(sizes[i]) for i in order]) if cfg.weighted else None
     diag = []  # per round: aggregator diagnostics, indexed by client id
     prev = torch.zeros(g.numel())  # previous aggregate update (CC's reference point)
@@ -163,6 +182,12 @@ def run(cfg: Config, log=print) -> dict:
         honest, byz_own = [], []
         for i in range(n):
             x_i, y_i = task.clients[i]
+            if i in excl:
+                # Draw its batches without training, so every other client's
+                # batch order matches the attacked runs (exact twins)
+                for _ in _batches(len(y_i), cfg, gen, device):
+                    pass
+                continue
             if i in byz and cfg.attack == "label_flip":
                 y_i = C - 1 - y_i
             load_flat_params(worker, g)
@@ -184,7 +209,7 @@ def run(cfg: Config, log=print) -> dict:
         # distance of each update from the previous aggregate (used to set tau)
         info["dist_prev"] = (U - prev).norm(dim=1).tolist()
         prev = update.detach().cpu()
-        diag.append(_by_client(info, order))
+        diag.append(_by_client(info, order, n))
 
         if (r + 1) % cfg.eval_every == 0 or r == cfg.rounds - 1:
             load_flat_params(model, g)

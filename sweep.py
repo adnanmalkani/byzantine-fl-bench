@@ -44,6 +44,9 @@ def main():
     p.add_argument("--local_steps", type=int, default=None)
     p.add_argument("--val_frac", type=float, default=0.0,
                    help="> 0: tuning mode, evaluate on held-out training data")
+    p.add_argument("--leave_out", type=int, default=0,
+                   help="clean leave-out controls: every set of this many clients is "
+                        "excluded from training in turn (natural splits; --attacks none)")
     p.add_argument("--drop_leaked", action="store_true",
                    help="fed_isic2019 duplicates check: drop the 17 leaked test images")
     p.add_argument("--shard", default="0/1",
@@ -70,7 +73,10 @@ def main():
         else:  # natural splits: fixed f, every attacker identity
             specs = []
             for f in a.fs:
-                if at == "none":
+                if at == "none" and a.leave_out:
+                    specs += [dict(f_assumed=f, exclude_ids=ids)
+                              for ids in attacker_sets(n, a.leave_out)]
+                elif at == "none":
                     specs.append(dict(f_assumed=f))
                 elif f > 0:
                     specs += [dict(byz_ids=ids) for ids in attacker_sets(n, f)]
