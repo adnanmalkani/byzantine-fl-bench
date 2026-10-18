@@ -561,7 +561,14 @@ thread each), lr 0.01, 101 rounds, CC tau = 1 (rule v2.1):
   f = 1, Krum and Multi-Krum at f = 2; they finish at once). About 14 h
   with 8 processes (measured 1.83 s of wall time per run).
 - Analysis: `python summarize.py results_isic` (pooled balanced accuracy;
-  worst centre with k = 5, and k = 10 as `*_k10`).
+  worst centre with k = 5, and k = 10 as `*_k10`) and `python
+  analyze_isic.py` (same tables as TCGA: clean, per attacker identity at
+  f = 1 and f = 2, k = 10 appendix versions, exclusion diagnostics,
+  figures). "Mean of real attacks": f = 1 label flip, sign flip, Gaussian,
+  IPM, `alie_z1`; f = 2 the same plus Baruch's ALIE (every attack that is
+  not degenerate, the principle fixed on 2026-10-16).
+- **Result (2026-10-18):** complete (39,840 files, 27,620 trained, none
+  corrupt).
 
 Commands (from the repo folder):
 - **Launch** (8 shards, logs appended to `results_isic/shard_<i>.log`):
