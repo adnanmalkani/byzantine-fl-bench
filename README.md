@@ -607,6 +607,46 @@ Disk: 9.8 GB download, about 19.5 GB at peak while unzipping, about 9 GB
 of original images afterwards, plus the preprocessed images and cached
 features (about 1 GB, estimated).
 
+## Leave-out controls (decided 2026-10-18, before any control run)
+
+When a big client attacks, accuracy falls for two reasons: its honest data
+is lost and its attack does damage. The controls separate them. For each
+client j (heart, TCGA, ISIC): every rule variant valid in the attacked
+f = 1 grid, both weightings, the attacked runs' seeds, clean, trained
+without j (`Config.exclude_ids`, `sweep.py --leave_out 1`), f_assumed = 1
+at n − 1, evaluated on all n test sets (j's included). Per seed:
+attacked − clean = (control − clean: **data loss**) + (attacked − control:
+**attack damage**), for the main average and the worst honest client
+(same clients in all three runs: all but j; TCGA: regions with ≥ 3
+deaths). Also reported: j's own test accuracy when it did not take part.
+- **Exact twins:** the left-out client still draws its batch indices each
+  round without training, so every other client gets exactly the batches
+  it gets in the attacked and the clean run. Exception: the Gaussian
+  attack draws its noise from the same random stream, so those runs
+  diverge after round 1.
+- **Two-out controls at f = 2** (TCGA 5 seeds, ISIC 20): FedAvg, median,
+  geomed, CC, f_assumed = 2. The count check (n > 2f) guards against
+  attackers; a control has none, and these rules ignore f, so the check is
+  skipped for them (`bench/fl.py`, `F_FREE`). Trimmed mean has no control
+  (trimming 2 + 2 of 4 leaves nothing).
+- Weighted median and geomed controls where one remaining client holds
+  more than 50% of the weight are flagged `dictator` (heart without
+  Cleveland or Hungary; ISIC without any of centres 1-5).
+- The default path is unchanged: `test_loo.py` reproduces 8 stored grid
+  runs bit for bit.
+
+Runs (`grid_loo.sh <i>/8 <mode> ...`, 8 shards; trained runs):
+heart 800, isic 1,680, tcga 1,680, isic_pair 2,400, tcga_pair 600.
+Analysis: `python analyze_loo.py` -> `results_tables/loo_*.csv`.
+
+Overnight batch (TCGA one-out, then the two-out controls), from the repo
+folder:
+- **Launch:** `for i in 0 1 2 3 4 5 6 7; do nohup caffeinate -is sh grid_loo.sh $i/8 tcga tcga_pair isic_pair >> results_tcga_loo/shard_$i.log 2>&1 & done`
+- **Stop:** `pkill -f grid_loo.sh; pkill -f "sweep.py --attacks none"`
+  (wrappers first). Restart with the launch command; finished runs are
+  skipped, and a killed run leaves no `.json`.
+- **Progress:** `echo "tcga: $(ls results_tcga_loo | grep -c '\.json$') / 2520, isic pairs: $(ls results_isic_loo | grep -c '_ex[0-9]-[0-9]_.*\.json$') / 2400"`
+
 ## Aggregator diagnostics
 
 Every run stores `diag`: per round, per client id, who the rule kept or
