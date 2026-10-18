@@ -91,7 +91,30 @@ Heart analysis and figures (all to `results_tables/`):
 ```bash
 python analyze_heart.py          # per-attacker tables, exclusion diagnostics, scatter
 python validity_table.py         # validity.csv + fig_validity_heatmap
+python validity_table.py --weights   # validity_weighted.csv (weight-based check)
 ```
+
+**Validity by data share (2026-10-18).** Validity is judged by data
+share, not only by the number of clients. With weights, a client holding
+more than 50% of the total weight makes the weighted median and the
+weighted geometric median equal to that client's update (a "dictator"),
+and lets it break the weighted median, geomed and CC when it attacks
+(Byzantine clients report their true sizes). Trimmed mean, Multi-Krum and
+Bulyan choose what to drop by count, so their breakdown does not depend on
+weight; Krum ignores weights. `validity_table.py --weights` checks this
+numerically on each FLamby dataset's real training sizes, for all clients
+and for each leave-one-out subset. Affected (2026-10-18):
+- Fed-ISIC2019 (centre 0 holds 53.4%): weighted median and geomed are
+  dictators; weighted median, geomed and CC break when centre 0 attacks
+  (f = 1) or is one of the two attackers (f = 2).
+- Leave-one-out subsets: heart without Cleveland (Hungary 59.9%) or
+  without Hungary (Cleveland 63.4%), and ISIC without any of centres 1-5
+  (centre 0 54-64%): weighted median and geomed are dictators.
+- Fed-TCGA-BRCA and the full heart set: no client over 50%; nothing
+  flagged by weight. (TCGA, f = 2: our 10-iteration geomed fails the
+  stress test when Northeast and West, 47.6% of the weight, attack; the
+  fully converged geometric median does not. An approximation limit, not
+  a weight effect.)
 
 ## Defaults
 

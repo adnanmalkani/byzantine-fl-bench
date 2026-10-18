@@ -9,7 +9,26 @@ Degeneracy is detected numerically on random updates, not from formulas:
 Also reports ALIE's z per (n, f): z <= 0 means the ALIE attack sends the
 mean of the benign updates (or moves towards it), i.e. it is not an attack.
 
+Weighted variants (--weights; decided 2026-10-18): validity also depends on
+data share, not only on n and f. With each FLamby dataset's real training
+sizes as weights (all clients, and each leave-one-out subset), two checks,
+both numerical and both counted only if the unweighted rule at the same
+(n, f) passes:
+  dictator      clean: the weighted output is the heaviest client's update
+                (within 5% of the way from it to the weighted mean; geomed is
+                10 Weiszfeld iterations, so it is close but not exact). The
+                rule is then that client's model.
+  breakdown     the f heaviest clients attack (Byzantine clients report their
+                true sizes) by pushing a fixed direction every round; the
+                aggregate ends more than 10x the honest spread away (CC: over
+                2,000 rounds, as only its state carries over)
+  breakdown_exact  geomed only: the same with Weiszfeld run to convergence
+                (1,000 iterations); where it differs from breakdown, the cause
+                is the 10-iteration approximation, not the weights
+Writes results_tables/validity_weighted.csv.
+
 Usage: python validity_table.py [--ns 3,4,5,6,20] [--fs 0,1,2] [--highlight 4]
+       python validity_table.py --weights
 Writes results_tables/validity.csv, fig_validity_heatmap.{png,pdf} and
 prints a table.
 """
@@ -45,6 +64,83 @@ def degeneracy(name, n, f, trials=5, d=50):
             labels.append("")
     # Report a degeneracy only if it happened in every trial
     return labels[0] if len(set(labels)) == 1 else ""
+
+
+def _agg(name, iters=None):
+    if name == "geomed" and iters:
+        return lambda U, f=0, w=None: AGGREGATORS["geomed"](U, f=f, w=w, iters=iters)
+    return get_aggregator(name)
+
+
+def dictator(name, w, trials=5, d=50):
+    """Clean random updates: is the output the heaviest client's update
+    (within 5% of the way from it to the weighted mean), in every trial?"""
+    g = torch.Generator().manual_seed(0)
+    n, top = len(w), int(w.argmax())
+    hits = []
+    for _ in range(trials):
+        U = torch.randn(n, d, generator=g)
+        out = get_aggregator(name)(U, f=0, w=w)
+        mean = (U * w[:, None]).sum(0) / w.sum()
+        hits.append(float((out - U[top]).norm() / (mean - U[top]).norm()) < 0.05)
+    return all(hits)
+
+
+def breakdown(name, w, f, rounds=2000, d=5, push=1e3, iters=None):
+    """The f heaviest clients push +push along e every round (relative to the
+    previous aggregate, as CC clips around it); honest updates ~ N(0, I).
+    Breakdown if the aggregate ends more than 10x the honest spread along e."""
+    g = torch.Generator().manual_seed(0)
+    n = len(w)
+    byz = set(w.argsort(descending=True)[:f].tolist())
+    order = [i for i in range(n) if i not in byz] + sorted(byz)
+    w = w[order]                                    # honest rows first, as in run()
+    agg, v = _agg(name, iters), torch.zeros(d)
+    for _ in range(rounds if name == "cc" else 1):  # only CC carries state
+        H = torch.randn(n - f, d, generator=g)
+        M = (v + push * torch.eye(d)[0]).expand(f, d)
+        v = agg(torch.cat([H, M]), f=f, w=w)
+    return bool(v[0] > 10 * d ** 0.5)
+
+
+def build_weighted(datasets):
+    """datasets: {name: (client names, training sizes)}."""
+    rows = []
+    for ds, (names, sizes) in datasets.items():
+        n = len(sizes)
+        cases = [("all clients", list(range(n)), [f for f in (1, 2) if n > 2 * f])]
+        cases += [(f"without {names[j]}", [i for i in range(n) if i != j], [])
+                  for j in range(n)]                # leave-one-out controls: clean
+        for label, keep, fs in cases:
+            w = torch.tensor([float(sizes[i]) for i in keep])
+            share = sorted((w / w.sum()).tolist(), reverse=True)
+            for name in AGGREGATORS:
+                row = {"dataset": ds, "clients": label, "n": len(keep), "rule": name,
+                       "max_share": round(share[0], 3),
+                       "dictator": dictator(name, w) and not dictator(name, torch.ones(len(keep)))}
+                for f in (1, 2):
+                    if f not in fs or check_valid(name, len(keep), f):
+                        row[f"breakdown_f{f}"] = None    # not attacked / invalid anyway
+                        continue
+                    row[f"top{f}_share"] = round(sum(share[:f]), 3)
+                    row[f"breakdown_f{f}"] = (breakdown(name, w, f)
+                                              and not breakdown(name, torch.ones(len(keep)), f))
+                    if name == "geomed":
+                        row[f"breakdown_exact_f{f}"] = (
+                            breakdown(name, w, f, iters=1000)
+                            and not breakdown(name, torch.ones(len(keep)), f, iters=1000))
+                rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def flamby_sizes():
+    from bench.fl import make_config
+    from bench.tasks import load_task
+    out = {}
+    for ds in ("fed_heart_disease", "fed_tcga_brca", "fed_isic2019"):
+        t = load_task(make_config(dataset=ds), torch.device("cpu"))
+        out[ds] = (t.client_names, [len(y) for _, y in t.clients])
+    return out
 
 
 def build(ns, fs):
@@ -129,7 +225,17 @@ def main():
     p.add_argument("--fs", type=csv(int), default=[0, 1, 2])
     p.add_argument("--out", default="results_tables")
     p.add_argument("--highlight", type=int, default=4, help="outline this n (heart: 4)")
+    p.add_argument("--weights", action="store_true",
+                   help="weight-based check on the FLamby datasets' real sizes")
     a = p.parse_args()
+    if a.weights:
+        w = build_weighted(flamby_sizes())
+        Path(a.out).mkdir(parents=True, exist_ok=True)
+        w.to_csv(Path(a.out) / "validity_weighted.csv", index=False)
+        flagged = w[w.dictator | w.filter(like="breakdown").eq(True).any(axis=1)]
+        print(flagged.to_string(index=False))
+        print(f"\nsaved {Path(a.out) / 'validity_weighted.csv'} ({len(flagged)} flagged rows)")
+        return
     df = build(a.ns, a.fs)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
