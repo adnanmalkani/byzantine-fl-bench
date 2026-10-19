@@ -9,6 +9,7 @@ Per dataset, rule, weighting, left-out client(s) J and seed:
   data loss     = control - clean
   attack damage = attacked - control
   total         = attacked - clean  (= data loss + attack damage)
+  attack damage without the ALIE variants (sensitivity column, *_no_alie)
 for the main average (avg_acc, each dataset's own) and the worst honest
 client, taken over the same clients in all three runs: every client not in
 J (TCGA: only regions with >= 3 test deaths). Means and 95% t CIs over
@@ -111,6 +112,14 @@ def decompose(name, f):
             for part, x in (("data_loss", C[k] - K[k]), ("attack_damage", A[k] - C[k]),
                             ("total", A[k] - K[k])):
                 row[f"{lab}_{part}"], row[f"{lab}_{part}_ci95"] = mean_ci(x)
+        # Sensitivity: attack damage without the ALIE variants. ALIE builds its
+        # vector from the mean of all benign updates, the attacker's own
+        # included, so it hands back part of j's data and can score above a
+        # control without j (2026-10-19).
+        A2 = a[~a.attack.str.startswith("alie")].groupby("seed")[m].mean().loc[seeds]
+        for k, lab in (("avg_acc", "avg"), ("worst_h", "worst")):
+            row[f"{lab}_attack_damage_no_alie"], row[f"{lab}_attack_damage_no_alie_ci95"] = (
+                mean_ci(A2[k] - C[k]))
         rows.append(row)
         for at, g in a.groupby("attack"):
             G = g.set_index("seed")[m].loc[[s for s in seeds if s in set(g.seed)]]

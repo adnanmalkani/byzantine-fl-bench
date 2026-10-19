@@ -637,10 +637,14 @@ deaths). Also reported: j's own test accuracy when it did not take part.
 
 Runs (`grid_loo.sh <i>/8 <mode> ...`, 8 shards; trained runs):
 heart 800, isic 1,680, tcga 1,680, isic_pair 2,400, tcga_pair 600.
-Analysis: `python analyze_loo.py` -> `results_tables/loo_*.csv`.
+Analysis: `python analyze_loo.py` -> `results_tables/loo_*.csv`. The
+`*_no_alie` columns give attack damage without the two ALIE variants:
+our ALIE vector uses the mean of all benign updates, the attacker's own
+included, so against a control without the attacker it partly returns
+that client's data (2026-10-19).
 
-Overnight batch (TCGA one-out, then the two-out controls), from the repo
-folder:
+All controls ran and were verified on 2026-10-19 (heart and ISIC one-out first; the rest overnight). Overnight batch (TCGA one-out, then
+the two-out controls), from the repo folder:
 - **Launch:** `for i in 0 1 2 3 4 5 6 7; do nohup caffeinate -is sh grid_loo.sh $i/8 tcga tcga_pair isic_pair >> results_tcga_loo/shard_$i.log 2>&1 & done`
 - **Stop:** `pkill -f grid_loo.sh; pkill -f "sweep.py --attacks none"`
   (wrappers first). Restart with the launch command; finished runs are
