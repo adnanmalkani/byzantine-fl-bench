@@ -77,7 +77,7 @@ def test_run_records_class_counts():
 
 
 def test_lr_and_rounds_must_be_given():
-    # Preset fixed by the screen + Amendment 2 (README, 2026-10-17)
+    # Preset fixed by the screen + Amendment 2 (docs/PROTOCOL.md, 2026-10-17)
     cfg = make_config(dataset="fed_isic2019")
     assert (cfg.lr, cfg.rounds) == (0.01, 101)
     try:
@@ -100,7 +100,7 @@ def test_drop_leaked_changes_test_sets_only():
     a = run(make_config(**kw), log=lambda *_: None)
     b = run(make_config(**kw, drop_leaked=True), log=lambda *_: None)
     removed = np.array(a["client_test_class_counts"]) - np.array(b["client_test_class_counts"])
-    # centre 0: MEL 3, NV 4, BCC 3, AK 2, BKL 4; centre 5: NV 1 (README)
+    # centre 0: MEL 3, NV 4, BCC 3, AK 2, BKL 4; centre 5: NV 1 (docs/PROTOCOL.md)
     assert removed[0].tolist() == [3, 4, 3, 2, 4, 0, 0, 0]
     assert removed[5].tolist() == [0, 1, 0, 0, 0, 0, 0, 0] and removed[1:5].sum() == 0
     assert a["diag"] == b["diag"]                       # training is identical

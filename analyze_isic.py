@@ -1,5 +1,5 @@
 """Fed-ISIC2019 grid: clean results, per-attacker results, who pays for
-robustness. Same tables as analyze_tcga.py, with ISIC's metrics (README,
+robustness. Same tables as analyze_tcga.py, with ISIC's metrics (docs/PROTOCOL.md,
 "Main-setting rules", pre-registered 2026-10-16):
   avg_acc           balanced accuracy over all centres' test images pooled
   worst_honest_acc  worst honest centre; per-centre balanced accuracy over

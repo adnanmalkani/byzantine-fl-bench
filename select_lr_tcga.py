@@ -1,5 +1,5 @@
 """Choose the learning rate and number of rounds for Fed-TCGA-BRCA's main
-setting, by the rule pre-registered in the README (commit 90341e4).
+setting, by the rule pre-registered in the README at commit 90341e4 (now docs/PROTOCOL.md).
 
 Clean sample-weighted FedAvg, FLamby's other settings (batch 8, 100 local
 steps), seeds 0-19, 200 rounds, evaluated every round on the POOLED
@@ -16,7 +16,7 @@ not-learned seed or no lr qualifies. Rounds: heart plateau rule on the
 chosen lr's curves (A_end = mean over rounds 151-200, tolerance 0.005); if
 R* > 150 the chosen lr must be re-run for 400 rounds (not done here).
 
-Amendment 1 (README, 2026-10-12, made after seeing the screen): seeds
+Amendment 1 (docs/PROTOCOL.md, 2026-10-12, made after seeing the screen): seeds
 not-learned at every lr (13, 19) are hard validation splits, excluded from
 the stop condition but kept in A(r). 0.003 is re-run to 400 rounds; if it
 has zero collapses and every other seed learns, choose 0.003 with R* over
@@ -110,7 +110,7 @@ def amendment_1(report, slow=0.003, fallback=0.01, long_rounds=400):
 
 def main():
     RUNS.mkdir(parents=True, exist_ok=True)
-    report = {"rule": "README, commit 90341e4", "lrs": {}}
+    report = {"rule": "README, commit 90341e4 (now docs/PROTOCOL.md)", "lrs": {}}
     for lr in LRS:
         recs = [one_run(lr, s) for s in SEEDS]
         cls = [classify(r) for r in recs]

@@ -1,4 +1,4 @@
-"""Fed-ISIC2019 duplicates check (README; decided 2026-10-16).
+"""Fed-ISIC2019 duplicates check (docs/PROTOCOL.md; decided 2026-10-16).
 
 Pairs each clean run in results_isic_noleak/ (the 17 test images with an
 exact copy in training dropped) with the same run in results_isic/, checks

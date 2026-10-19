@@ -81,7 +81,9 @@ def worst(df, n, out, eligible):
     return df[cols].min(axis=1)
 
 
-def decompose(name, f):
+def decompose(name, f, per_seed=False):
+    """per_seed=True also returns the per-seed parts (one row per rule,
+    weighting, left-out set and seed), for means over groups of left-out sets."""
     ds, main, ctrl_dir, names, real = DATASETS[name]
     n = len(names)
     eligible = WORST_ELIGIBLE.get(ds, list(range(n)))
@@ -89,7 +91,7 @@ def decompose(name, f):
     att = att[(att.rounds == att.rounds.max()) & (att.status == "ok")]
     ctrl = controls(ctrl_dir)
     ctrl = ctrl[(ctrl.status == "ok") & (ctrl.f_assumed == f)]
-    rows, by_attack = [], []
+    rows, by_attack, seed_rows = [], [], []
     for (agg, wt, lo), c in ctrl.groupby(["aggregator", "weighted", "left_out"]):
         out = {int(i) for i in lo.split(",")}
         clean = att[(att.attack == "none") & (att.f_assumed == f) &
@@ -121,6 +123,12 @@ def decompose(name, f):
             row[f"{lab}_attack_damage_no_alie"], row[f"{lab}_attack_damage_no_alie_ci95"] = (
                 mean_ci(A2[k] - C[k]))
         rows.append(row)
+        for s in seeds:
+            seed_rows.append(dict(rule=agg, weighted=wt, left_out=row["left_out"], seed=s, **{
+                f"{lab}_{part}": v for k, lab in (("avg_acc", "avg"), ("worst_h", "worst"))
+                for part, v in (("data_loss", C.at[s, k] - K.at[s, k]),
+                                ("attack_damage", A.at[s, k] - C.at[s, k]),
+                                ("attack_damage_no_alie", A2.at[s, k] - C.at[s, k]))}))
         for at, g in a.groupby("attack"):
             G = g.set_index("seed")[m].loc[[s for s in seeds if s in set(g.seed)]]
             d = G["avg_acc"] - C.loc[G.index, "avg_acc"]
@@ -131,6 +139,11 @@ def decompose(name, f):
     num = [c for c in t if c.startswith(("avg_", "worst_"))]
     t[num] = (t[num] * 100).round(2)
     b[["avg_attack_damage", "ci95"]] = (b[["avg_attack_damage", "ci95"]] * 100).round(2)
+    if per_seed:
+        p = pd.DataFrame(seed_rows)
+        num = [c for c in p if c.startswith(("avg_", "worst_"))]
+        p[num] = p[num] * 100
+        return t, b, att, ctrl, p
     return t, b, att, ctrl
 
 

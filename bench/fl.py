@@ -35,7 +35,7 @@ class Config:
     eval_every: int = 5
     val_frac: float = 0.0  # > 0: tuning mode, evaluate on held-out training data
     # fed_isic2019 duplicates check: drop the 17 test images that have an exact
-    # copy in training (README); training is unchanged
+    # copy in training (docs/PROTOCOL.md); training is unchanged
     drop_leaked: bool = False
     # Leave-out controls (2026-10-18): these clients neither train
     # nor send, but their test sets are still evaluated; e.g. "0" or "0,2"

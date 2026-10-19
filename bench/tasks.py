@@ -5,7 +5,7 @@ test set(s), model, loss and metric.
   split across n_clients with Dirichlet(alpha); one global test set.
 - FLamby datasets (natural splits, e.g. fed_heart_disease): one client per
   hospital, each with its own test set, plus FLamby's pooled test set.
-- fed_isic2019: frozen-backbone main setting (README): clients train only a
+- fed_isic2019: frozen-backbone main setting (docs/PROTOCOL.md): clients train only a
   linear layer on cached EfficientNet-b0 features (extract_isic_features.py).
 """
 import os
@@ -44,7 +44,7 @@ ISIC_FEATURES = "data/flamby/fed_isic2019/features_effb0_centercrop.pt"
 ISIC_CLASSES = 8
 # Test images with a byte-identical copy in a training set (isic_duplicates.py,
 # results_tables/isic_leaked_test.csv): 16 at centre 0, 1 at centre 5. Dropped
-# from the test sets only with Config.drop_leaked (duplicates check, README).
+# from the test sets only with Config.drop_leaked (duplicates check, docs/PROTOCOL.md).
 ISIC_LEAKED_TEST = frozenset({
     "ISIC_0053812", "ISIC_0056728", "ISIC_0057272", "ISIC_0061121", "ISIC_0061802",
     "ISIC_0063304", "ISIC_0063677", "ISIC_0064007", "ISIC_0064300", "ISIC_0064545",
@@ -64,7 +64,7 @@ PRESETS = {
     "fed_heart_disease": dict(n_clients=4, lr=0.001, batch_size=4,
                               local_steps=100, rounds=106, eval_every=1,
                               device="cpu"),  # tiny model: CPU beats MPS
-    # Main setting (README, select_lr_tcga.py): FLamby's Cox model, batch 8,
+    # Main setting (docs/PROTOCOL.md, select_lr_tcga.py): FLamby's Cox model, batch 8,
     # 100 local steps, but lr 0.003 and 243 rounds (pre-registered rule +
     # Amendment 1). FLamby's own lr 0.1 / 5 rounds collapse on their own and
     # are used only in reproduce_flamby_tcga.py.
@@ -72,7 +72,7 @@ PRESETS = {
                           rounds=243, eval_every=1, device="cpu"),
     # Frozen-backbone main setting: FLamby's batch 64 and 100 local steps, SGD
     # (as everywhere here). lr 0.01 (FLamby's FedAvg rate) and 101 rounds: the
-    # screen (select_lr_isic.py) + Amendment 2 (README, 2026-10-17).
+    # screen (select_lr_isic.py) + Amendment 2 (docs/PROTOCOL.md, 2026-10-17).
     "fed_isic2019": dict(n_clients=6, lr=0.01, batch_size=64, local_steps=100,
                          rounds=101, eval_every=1, device="cpu"),
 }
@@ -227,7 +227,7 @@ def isic_features(path=ISIC_FEATURES):
 def _isic_task(cfg, device):
     assert FocalLoss is not None, "FLamby's ISIC packages missing: run setup_flamby.sh"
     assert cfg.lr is not None and cfg.rounds is not None, \
-        "fed_isic2019: lr and rounds must be set (preset: README, Amendment 2)"
+        "fed_isic2019: lr and rounds must be set (preset: docs/PROTOCOL.md, Amendment 2)"
     d = isic_features()
     n = FLAMBY[cfg.dataset]
     clients = [(X.to(device), y.to(device)) for X, y, _ in d["train"]]

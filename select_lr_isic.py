@@ -1,6 +1,6 @@
 """Choose the learning rate and number of rounds for Fed-ISIC2019's main
 setting (frozen-backbone features, linear layer, SGD), by the rule
-pre-registered in the README ("Learning-rate screen", 2026-10-16).
+pre-registered in docs/PROTOCOL.md ("Learning-rate screen", 2026-10-16).
 
 Clean sample-weighted FedAvg, FLamby's batch 64 and 100 local steps, seeds
 0-19, 200 rounds, evaluated every round on the POOLED VALIDATION set (10% of
@@ -116,7 +116,7 @@ def main():
     p.add_argument("--workers", type=int, default=8)
     a = p.parse_args()
     RUNS.mkdir(parents=True, exist_ok=True)
-    report = {"rule": "README, Fed-ISIC2019 learning-rate screen (2026-10-16)", "lrs": {}}
+    report = {"rule": "docs/PROTOCOL.md, Fed-ISIC2019 learning-rate screen (2026-10-16)", "lrs": {}}
     with ProcessPoolExecutor(a.workers) as pool:
         recs = runs(pool, [(lr, s, ROUNDS) for lr in LRS for s in SEEDS])
         by_lr = {lr: recs[i * len(SEEDS):(i + 1) * len(SEEDS)] for i, lr in enumerate(LRS)}

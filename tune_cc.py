@@ -1,6 +1,6 @@
 """Choose Centered Clipping's radius tau for one dataset (rule v2.1).
 
-Rule v2 (fixed 2026-10-03, before any ISIC/TCGA data; README "Tuning CC's tau"),
+Rule v2 (fixed 2026-10-03, before any ISIC/TCGA data; docs/PROTOCOL.md "Tuning CC's tau"),
 amended to v2.1 the same day, before the MNIST multi-seed check was run:
   1. Reference: clean, unweighted FedAvg in validation mode (10% holdout),
      first 10 rounds, the dataset's tuning seeds.

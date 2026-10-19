@@ -1,5 +1,5 @@
 """Fed-TCGA-BRCA grid: clean results, per-attacker results, who pays for
-robustness. Same tables as analyze_heart.py, with TCGA's metrics (README,
+robustness. Same tables as analyze_heart.py, with TCGA's metrics (docs/PROTOCOL.md,
 "Metrics", pre-registered 2026-10-11):
   avg_acc           stratified C-index (within-region pairs pooled)
   worst_honest_acc  worst honest region among those with >= 3 test deaths

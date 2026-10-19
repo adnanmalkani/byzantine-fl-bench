@@ -7,3 +7,7 @@ results_legacy/
 results_*/
 third_party/
 results_tables/
+.DS_Store
+*.aux
+*.log
+*.synctex.gz

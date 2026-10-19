@@ -1,5 +1,5 @@
 """Reproduce FLamby's published FedAvg baseline on Fed-ISIC2019 with FLamby's
-own code (README, "Main setting and reproduction"; decided 2026-10-13/16).
+own code (docs/PROTOCOL.md, "Main setting and reproduction"; decided 2026-10-13/16).
 
 FLamby's benchmark (flamby/benchmarks/fed_benchmark.py, config_isic2019.json):
 ImageNet EfficientNet-b0, fully fine-tuned with FLamby's training
@@ -17,7 +17,7 @@ moved to the Mac's GPU (MPS), and the final model is evaluated there with the
 same logic as flamby.utils.evaluate_model_on_tests (eval mode, balanced
 accuracy on each centre's test set and on the pooled test set).
 
-Their side: method "FedAvg100" in FLamby's results CSVs. Check (README): our
+Their side: method "FedAvg100" in FLamby's results CSVs. Check (docs/PROTOCOL.md): our
 mean pooled balanced accuracy within one published std of FLamby's,
 0.534 +/- 0.114 = 0.420-0.648. Not expected to match seed by seed (batch
 order and augmentation draws differ by device).

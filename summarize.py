@@ -20,7 +20,7 @@ Survival data (TCGA, metric = C-index): avg_acc is the stratified C-index
 (within-region comparable pairs pooled = per-region C-indices weighted by
 pairs); worst_honest_acc, worst_acc and gap only count regions with >= 3
 test deaths (Northeast, South, West, Midwest). All regions stay in avg_acc.
-Fed-ISIC2019 (README, pre-registered 2026-10-16): avg_acc is one balanced
+Fed-ISIC2019 (docs/PROTOCOL.md, pre-registered 2026-10-16): avg_acc is one balanced
 accuracy over all centres' test images pooled (FLamby's pooled test set).
 Per-centre accuracy is the balanced accuracy over only the classes with at
 least k test images at that centre, and a centre counts only with >= 2 such
@@ -53,7 +53,7 @@ METRICS = ["final_acc", "avg_acc", "worst_honest_acc", "worst_acc", "gap",
 LAST = 3  # evaluations averaged for every metric
 SURVIVAL = {"fed_tcga_brca"}  # C-index datasets (same set as bench.tasks.SURVIVAL)
 MIN_DEATHS = 3  # survival: a region counts in worst-region metrics only with >= 3 test deaths
-ISIC_K = {"": 5, "_k10": 10}  # ISIC: metric suffix -> min test images per class (README)
+ISIC_K = {"": 5, "_k10": 10}  # ISIC: metric suffix -> min test images per class (docs/PROTOCOL.md)
 
 
 def is_degenerate(r: dict) -> bool:
@@ -119,7 +119,7 @@ def run_metrics(r: dict, last: int = LAST, test_sizes=None, survival=None) -> di
     Survival (TCGA; `survival` = per-region (pairs, deaths), loaded from the
     data if None): avg_acc is the stratified C-index, i.e. per-region
     C-indices weighted by comparable pairs, and the worst-region metrics only
-    and the gap only count regions with >= MIN_DEATHS test deaths (README)."""
+    and the gap only count regions with >= MIN_DEATHS test deaths (docs/PROTOCOL.md)."""
     hist = r["history"][-last:]
     if "client_class_correct" in hist[0]:
         return isic_metrics(r, last)

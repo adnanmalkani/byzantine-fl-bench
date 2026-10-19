@@ -1,4 +1,4 @@
-"""Fed-ISIC2019 main setting (README, decided 2026-10-13): cache frozen
+"""Fed-ISIC2019 main setting (docs/PROTOCOL.md, decided 2026-10-13): cache frozen
 ImageNet EfficientNet-b0 features once per image, so federated learning only
 trains the final layer.
 
