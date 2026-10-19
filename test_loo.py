@@ -10,6 +10,7 @@
 4. All n test sets are evaluated, the excluded client's included.
 """
 import json
+import re
 from pathlib import Path
 
 from bench.fl import make_config, run
@@ -36,12 +37,14 @@ def test_default_path_reproduces_stored_results():
     checked = 0
     for folder, name in STORED:
         p = Path(folder) / f"{name}.json"
+        if not p.exists():   # result_path() renames old-format files (no _lr) on lookup
+            p = next(Path(folder).glob(re.sub(r"_r(\d+)_s", r"_lr*_r\1_s", name) + ".json"), p)
         if not p.exists():
             print(f"skipped (missing): {p}")
             continue
         old = json.loads(p.read_text())
         cfg = _cfg(old)
-        assert name in (run_name(cfg), run_name(cfg, lr=False)), (run_name(cfg), name)
+        assert p.stem in (run_name(cfg), run_name(cfg, lr=False)), (run_name(cfg), p.stem)
         new = run(cfg, log=lambda *_: None)
         assert new["history"] == old["history"], name
         assert new["diag"] == old["diag"], name
