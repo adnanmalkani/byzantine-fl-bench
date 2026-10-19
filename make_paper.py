@@ -34,6 +34,7 @@ plt.rcParams.update({"font.size": 7.5, "axes.titlesize": 8, "axes.labelsize": 7.
                      "savefig.facecolor": "white", "font.family": "sans-serif",
                      "axes.titlelocation": "left"})
 WIDTH = 6.5   # inches, full text width
+MAX_ROWS = 46  # longest table that fits one page; longer tables are split
 
 DS = {
     "heart": dict(name="Fed-Heart-Disease", short="Heart", folder="results_heart",
@@ -189,6 +190,19 @@ def summary(key, f):
     return out
 
 
+def order(key):
+    """Client indices sorted by training size, largest first (ties keep the
+    dataset's order). Every table and figure lists clients in this order."""
+    t = pd.read_csv(TAB / f"{key}_exclusion_fa1.csv")
+    sz = (t[(t.aggregator == "fedavg") & ~t.weighted].set_index("hospital").train_size
+          .reindex(DS[key]["clients"]).to_numpy())
+    return [int(i) for i in np.argsort(-sz, kind="stable")]
+
+
+def ordered_clients(key):
+    return [DS[key]["clients"][i] for i in order(key)]
+
+
 def influence(key):
     """Relative influence per client (clean, server assumes f = 1)."""
     t = pd.read_csv(TAB / (f"{key}_exclusion_fa1.csv"))
@@ -251,7 +265,8 @@ def write_tab(name, colspec, header, body, note=None):
 
 
 def save_fig(fig, name):
-    fig.savefig(FIGS / f"{name}.pdf", bbox_inches="tight")
+    fig.savefig(FIGS / f"{name}.pdf", bbox_inches="tight",
+                metadata={"CreationDate": None})   # same data -> same bytes
     fig.savefig(FIGS / f"{name}.png", dpi=150, bbox_inches="tight")   # preview only
     plt.close(fig)
 
@@ -270,7 +285,7 @@ def tab_settings():
     for key in DS:
         t = pd.read_csv(TAB / f"{key}_exclusion_fa1.csv")
         g = t[(t.aggregator == "fedavg") & ~t.weighted].set_index("hospital").train_size
-        sh = g.reindex(DS[key]["clients"]) / g.sum() * 100
+        sh = g.reindex(ordered_clients(key)) / g.sum() * 100
         shares[key] = ", ".join(f"{s:.0f}" for s in sh)
     model = {"heart": "logistic regression", "tcga": "linear Cox model",
              "isic": "linear head on frozen EfficientNet-B0 features"}
@@ -283,7 +298,7 @@ def tab_settings():
         body.append([DS[key]["name"], str(p["n_clients"]), shares[key], model[key], metric[key],
                      f"{p['lr']:g}", str(p["rounds"]), seeds[key]])
     write_tab("tab_settings", "@{}lrp{2.6cm}p{2.6cm}p{2.4cm}rrr@{}",
-              ["Dataset & $n$ & Training share per client (\\%) & Model & Main metric & lr & Rounds & Seeds"],
+              ["Dataset & $n$ & Training share per client (\\%, largest first) & Model & Main metric & lr & Rounds & Seeds"],
               body)
 
 
@@ -479,38 +494,44 @@ def fig_who_pays():
     vs FedAvg of the same weighting."""
     from matplotlib.colors import TwoSlopeNorm
     rows = [v for v in variants() if v[0] not in ("fedavg", "bulyan")]   # Bulyan: invalid at f = 1
-    fig, axes = plt.subplots(2, 3, figsize=(WIDTH, 6.2),
+    fig, axes = plt.subplots(2, 3, figsize=(WIDTH, 6.8),
                              gridspec_kw=dict(width_ratios=[4, 6, 6]))
-    fig.subplots_adjust(left=0.13, right=0.995, top=0.93, bottom=0.07, wspace=0.06, hspace=0.32)
+    fig.subplots_adjust(left=0.13, right=0.995, top=0.94, bottom=0.11, wspace=0.06, hspace=0.42)
     cm = plt.get_cmap("RdBu")
     for j, key in enumerate(DS):
         d, df = DS[key], runs(key)
         t = pd.read_csv(TAB / f"{key}_exclusion_fa1.csv")
         sz = t[(t.aggregator == "fedavg") & ~t.weighted].set_index("hospital").train_size
         sz = sz.reindex(d["clients"])
-        order = np.argsort(-sz.to_numpy())
-        names = [f"{d['clients'][i].replace('centre ', 'c')}\n{100 * sz.iloc[i] / sz.sum():.0f}%"
-                 + ("$^\\dagger$" if i in d.get("ineligible", []) else "") for i in order]
+        idx = order(key)
+        names = [f"{d['clients'][i].replace('centre ', 'centre ')} ({100 * sz.iloc[i] / sz.sum():.0f}%)"
+                 + ("$^\\dagger$" if i in d.get("ineligible", []) else "") for i in idx]
         inf = influence(key)
-        M = np.full((len(rows), len(order)), np.nan)
-        D = np.full_like(M, np.nan)
+        V = np.full((len(rows), len(idx)), np.nan)      # true values (printed)
+        D = np.full_like(V, np.nan)
         for i, v in enumerate(rows):
             if v in inf:
-                M[i] = np.log2(np.clip(inf[v][order], 1 / 16, 16))
+                V[i] = inf[v][idx]
             c = clean_stats(df, *v, 1)
             if c is not None:
-                D[i] = (c["clients"] - clean_stats(df, "fedavg", v[1], 1)["clients"])[order]
-        for ax, X, norm, fmt in ((axes[0, j], M, TwoSlopeNorm(0, -3, 3), "inf"),
-                                 (axes[1, j], D, TwoSlopeNorm(0, -20, 20), "acc")):
-            ax.imshow(X, cmap=cm, norm=norm, aspect="auto")
+                D[i] = (c["clients"] - clean_stats(df, "fedavg", v[1], 1)["clients"])[idx]
+        # colour: log2 of the influence, floored at 1/16 for the colour scale only
+        C = np.log2(np.clip(V, 1 / 16, 16))
+        for ax, X, col, norm, fmt in ((axes[0, j], V, C, TwoSlopeNorm(0, -3, 3), "inf"),
+                                      (axes[1, j], D, D, TwoSlopeNorm(0, -20, 20), "acc")):
+            ax.imshow(col, cmap=cm, norm=norm, aspect="auto")
             for (r, c), x in np.ndenumerate(X):
                 if np.isnan(x):
-                    ax.text(c, r, "inv.", ha="center", va="center", fontsize=5, color=MUTED)
-                    continue
-                s = f"{2 ** x:.2f}" if fmt == "inf" else f"{x:+.0f}"
-                ax.text(c, r, s.replace("-", "−"), ha="center", va="center", fontsize=5,
-                        color="white" if abs(norm(x) - 0.5) > 0.35 else INK)
-            ax.set_xticks(range(len(order)), names, fontsize=5.8)
+                    lab = "inv."
+                    ax.text(c, r, lab, ha="center", va="center", fontsize=5, color=MUTED)
+                else:
+                    lab = f"{x:.2f}" if fmt == "inf" else f"{x:+.0f}"
+                    ax.text(c, r, lab.replace("-", "−"), ha="center", va="center", fontsize=5,
+                            color="white" if abs(norm(col[r, c]) - 0.5) > 0.35 else INK)
+                if fmt == "inf":
+                    WHO_PAYS_LABELS[(key, vlabel(*rows[r]), d["clients"][idx[c]])] = lab
+            ax.set_xticks(range(len(idx)), names, fontsize=5.8, rotation=40, ha="right",
+                          rotation_mode="anchor")
             ax.set_yticks(range(len(rows)), [vlabel(*v) for v in rows] if j == 0 else [])
             ax.tick_params(length=0)
             for s in ax.spines.values():
@@ -518,11 +539,41 @@ def fig_who_pays():
         axes[0, j].set_title(d["name"])
     fig.text(0.005, 0.975, "(a) Relative influence, clean: effective / nominal share "
              "(< 1 = discounted). Clients sorted by training share.", fontsize=7.5)
-    fig.text(0.005, 0.485, "(b) Per-client accuracy, clean: change vs FedAvg of the same "
+    fig.text(0.005, 0.505, "(b) Per-client accuracy, clean: change vs FedAvg of the same "
              "weighting (points).", fontsize=7.5)
     for j in range(3):
         axes[1, j].set_title("")
     save_fig(fig, "fig_who_pays")
+
+
+WHO_PAYS_LABELS = {}
+
+
+def check_who_pays():
+    """Every printed influence label in fig_who_pays equals the cell of
+    tab_influence_<ds>.tex for the same rule and client; 'inv.' cells have no
+    table row. Raises on any mismatch."""
+    import re
+    table = {}
+    for key in DS:
+        lines = (TABS / f"tab_influence_{key}.tex").read_text().splitlines()
+        head = next(l for l in lines if l.startswith("Rule &"))
+        names = [c.strip().rstrip("\\").strip() for c in head.split("&")[1:]]
+        clients = {c.replace("centre ", "Centre "): c for c in DS[key]["clients"]}
+        for l in lines:
+            if not l.endswith("\\\\") or l.startswith(("Rule &", "\\", "%")):
+                continue
+            cells = [c.strip() for c in l[:-2].split("&")]
+            for n, v in zip(names, cells[1:]):
+                table[(key, cells[0], clients[n])] = re.sub(r"\$-\$", "-", v)
+    assert WHO_PAYS_LABELS, "fig_who_pays has not been drawn"
+    bad = []
+    for k, lab in WHO_PAYS_LABELS.items():
+        want = table.get(k, "inv.")
+        if lab != want:
+            bad.append((k, lab, want))
+    assert not bad, f"fig_who_pays labels differ from the tables: {bad[:5]}"
+    print(f"check: {len(WHO_PAYS_LABELS)} influence labels in fig_who_pays match tables 9-11")
 
 
 def tab_influence():
@@ -532,8 +583,8 @@ def tab_influence():
         for v in variants():
             if v[0] == "fedavg" or v not in inf:
                 continue
-            body.append([vlabel(*v)] + [num(x, 2) for x in inf[v]])
-        names = [c.replace("centre ", "Centre ") for c in d["clients"]]
+            body.append([vlabel(*v)] + [num(inf[v][i], 2) for i in order(key)])
+        names = [c.replace("centre ", "Centre ") for c in ordered_clients(key)]
         write_tab(f"tab_influence_{key}", "@{}l" + "r" * len(names) + "@{}",
                   ["Rule & " + " & ".join(names)], body)
 
@@ -662,9 +713,13 @@ def tab_loo_appendix():
     for key in DS:
         for f in sorted(DS[key]["real"]):
             t = pd.read_csv(TAB / f"loo_{key}_f{f}.csv")
-            body = []
-            for lo, g in t.groupby("left_out", sort=False):
-                body.append(("GROUP", f"Left out / attacking: {lo}"))
+            rank = {c: i for i, c in enumerate(ordered_clients(key))}
+            groups = sorted(t.groupby("left_out", sort=False),
+                            key=lambda kv: sorted(rank[c] for c in kv[0].split("+")))
+            blocks = []
+            for lo, g in groups:
+                lo = "+".join(sorted(lo.split("+"), key=rank.get))
+                body = [("GROUP", f"Left out / attacking: {lo}")]
                 g = g.set_index(["rule", "weighted"])
                 for v in variants():
                     if v not in g.index:
@@ -676,18 +731,29 @@ def tab_loo_appendix():
                                  pm((r.avg_attack_damage, r.avg_attack_damage_ci95), sign=True),
                                  pm((r.worst_data_loss, r.worst_data_loss_ci95), sign=True),
                                  pm((r.worst_attack_damage_no_alie, r.worst_attack_damage_no_alie_ci95), sign=True)])
-            write_tab(f"tab_loo_{key}_f{f}_all", "@{}l ccc cc@{}",
-                      ["& \\multicolumn{3}{c}{Average} & \\multicolumn{2}{c}{Worst honest client} \\\\",
-                       "\\cmidrule(lr){2-4}\\cmidrule(l){5-6}",
-                       "Rule & Data loss & Attack (no ALIE) & Attack (all) & Data loss & Attack (no ALIE)"],
-                      body)
+                blocks.append(body)
+            # split at group boundaries into parts that fit one page
+            parts, cur = [], []
+            for b in blocks:
+                if cur and len(cur) + len(b) > MAX_ROWS:
+                    parts.append(cur)
+                    cur = []
+                cur += b
+            parts.append(cur)
+            for k, body in enumerate(parts, 1):
+                name = f"tab_loo_{key}_f{f}_all" + (f"_{k}" if len(parts) > 1 else "")
+                write_tab(name, "@{}l ccc cc@{}",
+                          ["& \\multicolumn{3}{c}{Average} & \\multicolumn{2}{c}{Worst honest client} \\\\",
+                           "\\cmidrule(lr){2-4}\\cmidrule(l){5-6}",
+                           "Rule & Data loss & Attack (no ALIE) & Attack (all) & Data loss & Attack (no ALIE)"],
+                          body, note=f"part {k} of {len(parts)}" if len(parts) > 1 else None)
         o = pd.read_csv(TAB / f"loo_{key}_own.csv")
         piv = {(r.rule, r.weighted, r.client): (r.change, r.ci95) for r in o.itertuples()}
-        body = [[vlabel(*v)] + [pm(piv.get((v[0], v[1], c)), sign=True) for c in DS[key]["clients"]]
-                for v in variants() if any((v[0], v[1], c) in piv for c in DS[key]["clients"])]
-        write_tab(f"tab_loo_{key}_own", "@{}l" + "c" * len(DS[key]["clients"]) + "@{}",
-                  ["Rule & " + " & ".join(c.replace("centre ", "Centre ") for c in DS[key]["clients"])],
-                  body)
+        cl = ordered_clients(key)
+        body = [[vlabel(*v)] + [pm(piv.get((v[0], v[1], c)), sign=True) for c in cl]
+                for v in variants() if any((v[0], v[1], c) in piv for c in cl)]
+        write_tab(f"tab_loo_{key}_own", "@{}l" + "c" * len(cl) + "@{}",
+                  ["Rule & " + " & ".join(c.replace("centre ", "Centre ") for c in cl)], body)
 
 
 def fig_loo(parts, f, panels, name, rules):
@@ -729,6 +795,13 @@ def fig_loo(parts, f, panels, name, rules):
 
 # ---------------------------------------------------------------- reproductions
 
+def repro_rows(key, fn):
+    """Reproduction table rows: pooled first, then clients by training share."""
+    t = pd.read_csv(TAB / fn)
+    names = ["pooled"] + [c.lower().replace(" ", "_") for c in ordered_clients(key)]
+    return t.set_index("test_set").loc[names].reset_index()
+
+
 def tab_repro():
     body = []
     labels = {"heart": ("Fed-Heart-Disease, accuracy, 5 seeds", "flamby_heart_repro.csv"),
@@ -736,12 +809,12 @@ def tab_repro():
               "isic": ("Fed-ISIC2019, balanced accuracy, FLamby's code, 2 seeds (ours) vs 5",
                        "flamby_isic_repro.csv")}
     for key, (lab, fn) in labels.items():
-        t = pd.read_csv(TAB / fn)
+        t = repro_rows(key, fn)
         body.append(("GROUP", lab))
         for r in t.itertuples():
             ours = (f"{r.ours_mean:.3f} ({r.ours_seeds})" if key == "isic"
                     else f"{r.ours_mean:.3f} $\\pm$ {r.ours_std:.3f}")
-            body.append([r.test_set.replace("_", " ").capitalize(), ours,
+            body.append([{"va": "VA"}.get(r.test_set, r.test_set.replace("_", " ").capitalize()), ours,
                          f"{r.flamby_mean:.3f} $\\pm$ {r.flamby_std:.3f}",
                          num(r.diff, 3, True), "yes" if r.within_1_std else "no"])
         body.append("MID")
@@ -751,22 +824,36 @@ def tab_repro():
 
 
 def fig_repro():
-    fig, axes = plt.subplots(1, 3, figsize=(WIDTH, 2.2), gridspec_kw=dict(width_ratios=[5, 7, 7]))
+    fig, axes = plt.subplots(1, 3, figsize=(WIDTH, 2.7), gridspec_kw=dict(width_ratios=[5, 7, 7]))
     for ax, (key, fn) in zip(axes, (("heart", "flamby_heart_repro.csv"),
                                     ("tcga", "flamby_tcga_repro.csv"),
                                     ("isic", "flamby_isic_repro.csv"))):
-        t = pd.read_csv(TAB / fn)
+        t = repro_rows(key, fn)
         x = np.arange(len(t))
-        ax.errorbar(x + 0.12, t.flamby_mean, yerr=t.flamby_std, fmt="s", color=MUTED, ms=3.5,
+        top = 1.0 if key == "tcga" else np.inf    # a C-index cannot exceed 1
+
+        def bars(mean, sd):
+            up = np.minimum(mean + sd, top) - mean
+            return np.vstack([sd, up]), mean + sd > top
+        yerr, cut = bars(t.flamby_mean.to_numpy(), t.flamby_std.to_numpy())
+        ax.errorbar(x + 0.12, t.flamby_mean, yerr=yerr, fmt="s", color=MUTED, ms=3.5,
                     elinewidth=0.8, label="FLamby (published, mean ± s.d.)")
+        ax.plot((x + 0.12)[cut], [top] * cut.sum(), "^", color=MUTED, ms=3, clip_on=False)
         if key == "isic":
             for i, s in enumerate(t.ours_seeds):
                 ax.plot([i - 0.12] * 2, [float(v) for v in s.split(",")], "_", color=RULE_COLORS["fedavg"],
                         ms=5, label="ours, each seed (ISIC: 2 seeds)" if i == 0 else None)
             ax.plot(x - 0.12, t.ours_mean, "o", color=RULE_COLORS["fedavg"], ms=3.5)
         else:
-            ax.errorbar(x - 0.12, t.ours_mean, yerr=t.ours_std, fmt="o", color=RULE_COLORS["fedavg"],
+            yerr, cut = bars(t.ours_mean.to_numpy(), t.ours_std.to_numpy())
+            ax.errorbar(x - 0.12, t.ours_mean, yerr=yerr, fmt="o", color=RULE_COLORS["fedavg"],
                         ms=3.5, elinewidth=0.8, label="ours (mean ± s.d.)")
+            ax.plot((x - 0.12)[cut], [top] * cut.sum(), "^", color=RULE_COLORS["fedavg"], ms=3,
+                    clip_on=False)
+        if key == "tcga":
+            ax.set_ylim(top=1.0)
+            ax.text(1.0, 1.02, "▲ s.d. bar cut at 1", transform=ax.transAxes, ha="right",
+                    va="bottom", fontsize=5.5, color=MUTED)
         names = {"va": "VA", "pooled": "Pooled"}
         ax.set_xticks(x, [names.get(s, s.replace("centre_", "c").capitalize()) for s in t.test_set],
                       rotation=45, ha="right", fontsize=6.5)
@@ -775,9 +862,9 @@ def fig_repro():
         style(ax, xgrid=False)
     h = axes[0].get_legend_handles_labels()
     h2 = axes[2].get_legend_handles_labels()
+    fig.subplots_adjust(left=0.07, right=0.995, top=0.9, bottom=0.36, wspace=0.32)
     fig.legend(h[0] + h2[0][:1], h[1] + h2[1][:1], loc="lower center", ncol=3,
-               bbox_to_anchor=(0.5, -0.1))
-    fig.tight_layout()
+               bbox_to_anchor=(0.5, 0.0))
     save_fig(fig, "fig_repro")
 
 
@@ -809,9 +896,46 @@ def tab_mnist():
               ["Rule & " + " & ".join(names[a] for a in attacks)], body)
 
 
+FIG_ORDER = ["fig_validity", "fig_clean", "fig_who_pays", "fig_f1", "fig_f2", "fig_loo_f1",
+             "fig_loo_f2", "fig_repro"]
+TAB_ORDER = ["tab_settings", "tab_validity", "tab_clean", "tab_f1", "tab_f2", "tab_loo_f1",
+             "tab_loo_f2", "tab_repro", "tab_influence_heart", "tab_influence_tcga",
+             "tab_influence_isic", "tab_loo_heart_f1_all", "tab_loo_tcga_f1_all",
+             "tab_loo_isic_f1_all", "tab_loo_tcga_f2_all", "tab_loo_isic_f2_all",
+             "tab_loo_heart_own", "tab_loo_tcga_own", "tab_loo_isic_own", "tab_isic_leak",
+             "tab_mnist"]
+
+
+def write_preview():
+    """paper/preview.tex: every figure and table (split tables part by part)
+    and the acknowledgments, to check the layout on Overleaf."""
+    tabs = []
+    for t in TAB_ORDER:
+        tabs += [t] if (TABS / f"{t}.tex").exists() else \
+            sorted((q.stem for q in TABS.glob(f"{t}_[0-9].tex")), key=lambda x: int(x.rsplit("_", 1)[1]))
+    made = {q.stem for q in TABS.glob("*.tex")}
+    assert set(tabs) == made, f"tables missing from the preview list: {made - set(tabs)}"
+    esc = lambda x: x.replace("_", "\\_")
+    L = [r"% Preview of every generated figure and table (generated by make_paper.py;",
+         r"% compile on Overleaf after uploading paper/).",
+         r"\documentclass[10pt]{article}", r"\usepackage[margin=2cm]{geometry}",
+         r"\usepackage{booktabs,amssymb,amsmath,graphicx}", r"\begin{document}"]
+    for f in FIG_ORDER:
+        L += [r"\begin{figure}[p]\centering", rf"\includegraphics[width=\linewidth]{{figures/{f}.pdf}}",
+              rf"\caption{{\texttt{{{esc(f)}}}}}", r"\end{figure}"]
+    for t in tabs:
+        L += [r"\begin{table}[p]\centering\small", rf"\caption{{\texttt{{{esc(t)}}}}}",
+              rf"\resizebox{{\linewidth}}{{!}}{{\input{{tables/{t}}}}}", r"\end{table}"]
+    L += [r"\clearpage", r"\input{acknowledgments}", r"\end{document}"]
+    (RT / "preview.tex").write_text("\n".join(L) + "\n")
+    return tabs
+
+
 def main():
     FIGS.mkdir(parents=True, exist_ok=True)
     TABS.mkdir(parents=True, exist_ok=True)
+    for q in list(FIGS.glob("*")) + list(TABS.glob("*.tex")):   # no stale outputs
+        q.unlink()
     tab_settings()
     tab_validity()
     fig_validity()
@@ -834,7 +958,9 @@ def main():
     fig_repro()
     tab_isic_leak()
     tab_mnist()
-    print("wrote", len(list(FIGS.glob("*.pdf"))), "figures and", len(list(TABS.glob("*.tex"))), "tables")
+    check_who_pays()
+    tabs = write_preview()
+    print("wrote", len(list(FIGS.glob("*.pdf"))), "figures and", len(tabs), "tables (preview.tex)")
 
 
 if __name__ == "__main__":
