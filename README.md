@@ -641,7 +641,10 @@ Analysis: `python analyze_loo.py` -> `results_tables/loo_*.csv`. The
 `*_no_alie` columns give attack damage without the two ALIE variants:
 our ALIE vector uses the mean of all benign updates, the attacker's own
 included, so against a control without the attacker it partly returns
-that client's data (2026-10-19).
+that client's data (2026-10-19). Decided 2026-10-19: in
+the leave-out tables the `*_no_alie` column is the main attack-damage
+number, and the all-attacks column goes in the appendix. Every other
+table keeps the mean of all real attacks.
 
 All controls ran and were verified on 2026-10-19 (heart and ISIC one-out first; the rest overnight). Overnight batch (TCGA one-out, then
 the two-out controls), from the repo folder:
