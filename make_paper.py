@@ -279,26 +279,55 @@ def style(ax, xgrid=True):
 
 # ---------------------------------------------------------------- settings
 
+MODEL = {"heart": "logistic regression", "tcga": "linear Cox model",
+         "isic": "linear head on frozen EfficientNet-B0 features"}
+METRIC = {"heart": "accuracy (test-size weighted)", "tcga": "C-index (stratified)",
+          "isic": "balanced accuracy (pooled)"}
+SEEDS = {"heart": "20", "tcga": "20 ($f=2$: 5)", "isic": "20"}
+
+
+def train_sizes(key):
+    t = pd.read_csv(TAB / f"{key}_exclusion_fa1.csv")
+    return t[(t.aggregator == "fedavg") & ~t.weighted].set_index("hospital").train_size
+
+
 def tab_settings():
     from bench.tasks import PRESETS
     shares = {}
     for key in DS:
-        t = pd.read_csv(TAB / f"{key}_exclusion_fa1.csv")
-        g = t[(t.aggregator == "fedavg") & ~t.weighted].set_index("hospital").train_size
+        g = train_sizes(key)
         sh = g.reindex(ordered_clients(key)) / g.sum() * 100
         shares[key] = ", ".join(f"{s:.0f}" for s in sh)
-    model = {"heart": "logistic regression", "tcga": "linear Cox model",
-             "isic": "linear head on frozen EfficientNet-B0 features"}
-    metric = {"heart": "accuracy (test-size weighted)", "tcga": "C-index (stratified)",
-              "isic": "balanced accuracy (pooled)"}
-    seeds = {"heart": "20", "tcga": "20 ($f=2$: 5)", "isic": "20"}
     body = []
     for key in DS:
         p = PRESETS[DS[key]["dataset"]]
-        body.append([DS[key]["name"], str(p["n_clients"]), shares[key], model[key], metric[key],
-                     f"{p['lr']:g}", str(p["rounds"]), seeds[key]])
+        body.append([DS[key]["name"], str(p["n_clients"]), shares[key], MODEL[key], METRIC[key],
+                     f"{p['lr']:g}", str(p["rounds"]), SEEDS[key]])
     write_tab("tab_settings", "@{}lrp{2.6cm}p{2.6cm}p{2.4cm}rrr@{}",
               ["Dataset & $n$ & Training share per client (\\%, largest first) & Model & Main metric & lr & Rounds & Seeds"],
+              body)
+
+
+def tab_datasets():
+    """Settings with every client's training share and train/test sizes (test
+    sizes from the data, summarize.client_test_sizes) and CC's tau
+    (results_tune/cc_tau_<dataset>.json)."""
+    import json
+    from bench.tasks import PRESETS
+    from summarize import client_test_sizes
+    body = []
+    for key in DS:
+        d, p = DS[key], PRESETS[DS[key]["dataset"]]
+        train = train_sizes(key).reindex(d["clients"])
+        test = dict(zip(d["clients"], client_test_sizes(d["dataset"])))
+        tau = json.loads(Path(f"results_tune/cc_tau_{d['dataset']}.json").read_text())["cc_tau"]
+        clients = ", ".join(f"{c.replace('centre ', 'Centre ')} {100 * train[c] / train.sum():.1f}\\% "
+                            f"({train[c]}/{test[c]})" for c in ordered_clients(key))
+        body.append([d["name"], str(p["n_clients"]), clients, MODEL[key], METRIC[key],
+                     f"{p['lr']:g}", str(p["rounds"]), f"{tau:g}", SEEDS[key]])
+    write_tab("tab_datasets", "@{}lrp{5.2cm}p{2.4cm}p{2.2cm}rrrr@{}",
+              ["Dataset & $n$ & Client: training share (train/test size), largest first & Model & "
+               "Main metric & lr & Rounds & $\\tau$ (CC) & Seeds"],
               body)
 
 
@@ -898,7 +927,7 @@ def tab_mnist():
 
 FIG_ORDER = ["fig_validity", "fig_clean", "fig_who_pays", "fig_f1", "fig_f2", "fig_loo_f1",
              "fig_loo_f2", "fig_repro"]
-TAB_ORDER = ["tab_settings", "tab_validity", "tab_clean", "tab_f1", "tab_f2", "tab_loo_f1",
+TAB_ORDER = ["tab_settings", "tab_datasets", "tab_validity", "tab_clean", "tab_f1", "tab_f2", "tab_loo_f1",
              "tab_loo_f2", "tab_repro", "tab_influence_heart", "tab_influence_tcga",
              "tab_influence_isic", "tab_loo_heart_f1_all", "tab_loo_tcga_f1_all",
              "tab_loo_isic_f1_all", "tab_loo_tcga_f2_all", "tab_loo_isic_f2_all",
@@ -937,6 +966,7 @@ def main():
     for q in list(FIGS.glob("*")) + list(TABS.glob("*.tex")):   # no stale outputs
         q.unlink()
     tab_settings()
+    tab_datasets()
     tab_validity()
     fig_validity()
     tab_clean()

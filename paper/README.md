@@ -46,6 +46,7 @@ The server assumes f_assumed = f in clean runs. Claims supported:
 | File | What it shows | Supports |
 |---|---|---|
 | `tab_settings.tex` | Datasets: clients, training shares, model, metric, lr, rounds, seeds. | setup |
+| `tab_datasets.tex` | Same, with each client's training share and train/test size, and CC's τ. | setup |
 | `tab_validity.tex` | Validity by client count (n = 4, 6; f = 1, 2) and by data share for weighted rules (D = dictator when clean; B1/B2 = the heaviest 1/2 clients break it; * = only with 10 Weiszfeld iterations; n/a = invalid by count anyway). | 1 |
 | `tab_clean.tex` | Clean average and worst client per rule variant, the least-influential client (relative influence) and Spearman ρ(size, influence). | 4, 5 |
 | `tab_influence_{heart,tcga,isic}.tex` | Appendix: relative influence of every client per rule. | 5 |
