@@ -92,17 +92,18 @@ def clean_stats(df, rule, w, fa):
                 clients=(g[acc].mean() * 100).to_numpy())
 
 
-def attacked_stats(df, rule, w, f, real, attacker=None):
+def attacked_stats(df, rule, w, f, real, attacker=None, suffix=""):
     """Mean of real attacks at f (per seed over attacks x attackers); the
-    attacker set can be a predicate on the byz_ids string."""
+    attacker set can be a predicate on the byz_ids string. suffix "_k10":
+    ISIC's worst centre with k = 10."""
     g = df[(df.f == f) & df.attack.isin(real) & (df.aggregator == rule) &
            (df.weighted == w) & (df.status == "ok")]
     if attacker is not None:
         g = g[g.attacker.astype(str).map(attacker)]
     if g.empty:
         return None
-    s = g.groupby("seed")[["avg_acc", "worst_honest_acc"]].mean() * 100
-    return dict(avg=mean_ci(s.avg_acc), worst=mean_ci(s.worst_honest_acc), n_seeds=len(s))
+    s = g.groupby("seed")[["avg_acc", "worst_honest_acc" + suffix]].mean() * 100
+    return dict(avg=mean_ci(s.avg_acc), worst=mean_ci(s["worst_honest_acc" + suffix]), n_seeds=len(s))
 
 
 def _matched(path):
@@ -120,9 +121,11 @@ def _matched(path):
     for f in (1, 2):
         for ids in attacker_sets(n, f):
             r["byz_ids"] = [int(i) for i in ids.split(",")]
+            m = run_metrics(r)
             rows.append(dict(rule=c["aggregator"], weighted=c["weighted"], seed=c["seed"],
                              fa=r["f_assumed"], f=f, attacker=ids,
-                             worst=run_metrics(r)["worst_honest_acc"] * 100))
+                             worst=m["worst_honest_acc"] * 100,
+                             worst_k10=m.get("worst_honest_acc_k10", np.nan) * 100))
     return rows
 
 
@@ -136,14 +139,14 @@ def matched_clean(key):
     return _cache[("matched", key)]
 
 
-def clean_worst_matched(key, rule, w, f, attacker=None):
+def clean_worst_matched(key, rule, w, f, attacker=None, suffix=""):
     m = matched_clean(key)
     g = m[(m.rule == rule) & (m.weighted == w) & (m.fa == f) & (m.f == f)]
     if attacker is not None:
         g = g[g.attacker.map(attacker)]
     if g.empty:
         return None
-    return mean_ci(g.groupby("seed").worst.mean())
+    return mean_ci(g.groupby("seed")["worst" + suffix].mean())
 
 
 def big_delta(key, rule, w, f):
@@ -646,6 +649,34 @@ def tab_attacked(f, keys, name):
               body, note=f"largest client: {big}")
 
 
+def tab_isic_k10():
+    """Appendix: ISIC worst honest centre with k = 5 (main) and k = 10 test
+    images per class (centre 5 drops out at k = 10); clean over the same
+    honest centres, and the mean of real attacks, at f = 1 and f = 2."""
+    df, d = runs("isic"), DS["isic"]
+    body = []
+    for v in variants():
+        row, valid = [vlabel(*v)], False
+        for f in (1, 2):
+            if clean_stats(df, *v, f) is None or attacked_stats(df, *v, f, d["real"][f]) is None:
+                row.append("\\multicolumn{4}{c}{invalid}")
+                continue
+            valid = True
+            for suffix in ("", "_k10"):
+                row += [pm(clean_worst_matched("isic", *v, f, suffix=suffix)),
+                        pm(attacked_stats(df, *v, f, d["real"][f], suffix=suffix)["worst"])]
+        if valid:
+            body.append(row)
+    write_tab("tab_isic_k10", "@{}l cccc cccc@{}",
+              ["& \\multicolumn{4}{c}{$f=1$} & \\multicolumn{4}{c}{$f=2$} \\\\",
+               "\\cmidrule(lr){2-5}\\cmidrule(l){6-9}",
+               "& \\multicolumn{2}{c}{$k=5$} & \\multicolumn{2}{c}{$k=10$} & "
+               "\\multicolumn{2}{c}{$k=5$} & \\multicolumn{2}{c}{$k=10$} \\\\",
+               "\\cmidrule(lr){2-3}\\cmidrule(lr){4-5}\\cmidrule(lr){6-7}\\cmidrule(l){8-9}",
+               "Rule & Clean & Attacked & Clean & Attacked & Clean & Attacked & Clean & Attacked"],
+              body)
+
+
 def fig_attacked(f, keys, name):
     fig, axes = plt.subplots(2, len(keys), figsize=(WIDTH if len(keys) == 3 else WIDTH * 0.7, 5.6),
                              sharey=True, squeeze=False)
@@ -931,8 +962,8 @@ TAB_ORDER = ["tab_settings", "tab_datasets", "tab_validity", "tab_clean", "tab_f
              "tab_loo_f2", "tab_repro", "tab_influence_heart", "tab_influence_tcga",
              "tab_influence_isic", "tab_loo_heart_f1_all", "tab_loo_tcga_f1_all",
              "tab_loo_isic_f1_all", "tab_loo_tcga_f2_all", "tab_loo_isic_f2_all",
-             "tab_loo_heart_own", "tab_loo_tcga_own", "tab_loo_isic_own", "tab_isic_leak",
-             "tab_mnist"]
+             "tab_loo_heart_own", "tab_loo_tcga_own", "tab_loo_isic_own", "tab_isic_k10",
+             "tab_isic_leak", "tab_mnist"]
 
 
 def write_preview():
@@ -976,6 +1007,7 @@ def main():
     tab_attacked(1, list(DS), "tab_f1")
     fig_attacked(1, list(DS), "fig_f1")
     tab_attacked(2, ["tcga", "isic"], "tab_f2")
+    tab_isic_k10()
     fig_attacked(2, ["tcga", "isic"], "fig_f2")
     parts = loo_parts()
     tab_loo(parts)

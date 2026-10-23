@@ -57,6 +57,7 @@ The server assumes f_assumed = f in clean runs. Claims supported:
 | `tab_loo_{ds}_f{1,2}_all.tex`, split into `_1`, `_2`, `_3` when longer than a page (TCGA and ISIC; parts break between left-out clients) | Appendix: every left-out client or pair; attack damage without ALIE (main) and with all real attacks (appendix column: ALIE's vector includes the attacker's own honest update, so against a leave-out control it returns part of that client's data); worst honest client. ‡ = dictator control (weighted median/GeoMed with one client > 50% of the remaining weight). | 2, 3 |
 | `tab_loo_{ds}_own.tex` | Appendix: the left-out client's own test set, absent − present (f = 1). TCGA: Europe and Canada have < 3 test deaths. | 8 |
 | `tab_repro.tex` | FLamby reproductions (heart and TCGA: 5 seeds; ISIC: FLamby's own code, 2 seeds vs FLamby's 5). | setup |
+| `tab_isic_k10.tex` | Appendix: ISIC worst honest centre with k = 5 (main) and k = 10 test images per class (centre 5 drops out at k = 10): clean (same honest centres) and mean of real attacks, f = 1 and f = 2. | setup |
 | `tab_isic_leak.tex` | Appendix: ISIC duplicates check, change in pooled / worst-centre balanced accuracy when the 17 leaked test images are dropped (clean runs). | setup |
 | `tab_mnist.tex` | Appendix: MNIST Block A (20 synthetic clients, α 0.5, 4 attackers, 3 seeds), accuracy per rule and attack. | 7 |
 
@@ -66,7 +67,7 @@ The server assumes f_assumed = f in clean runs. Claims supported:
   South, West, Midwest); its test split is easier than its training data,
   so compare rules, not absolute C-indices.
 - ISIC worst centre: per-centre balanced accuracy over classes with ≥ 5
-  test images (k = 10 in the appendix CSVs).
+  test images (k = 10 in `tab_isic_k10` and the appendix CSVs).
 - Heart at n = 4, f = 1: Krum, Multi-Krum and Bulyan are invalid; the
   unweighted trimmed mean equals the median. Baruch's ALIE has z = 0 at
   n = 4 or 6 with f = 1 and is excluded from real attacks (it is kept at
