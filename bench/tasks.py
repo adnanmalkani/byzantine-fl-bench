@@ -65,7 +65,7 @@ PRESETS = {
                               local_steps=100, rounds=106, eval_every=1,
                               device="cpu"),  # tiny model: CPU beats MPS
     # Main setting (docs/PROTOCOL.md, select_lr_tcga.py): FLamby's Cox model, batch 8,
-    # 100 local steps, but lr 0.003 and 243 rounds (pre-registered rule +
+    # 100 local steps, but lr 0.003 and 243 rounds (pre-specified rule +
     # Amendment 1). FLamby's own lr 0.1 / 5 rounds collapse on their own and
     # are used only in reproduce_flamby_tcga.py.
     "fed_tcga_brca": dict(n_clients=6, lr=0.003, batch_size=8, local_steps=100,

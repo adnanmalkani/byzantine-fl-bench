@@ -20,11 +20,13 @@ Fed-ISIC2019 (6 centres).
 - **Leave-out controls:** clean runs without the attacking client(s), so a
   drop under attack can be split into lost data and attack damage.
 
-The full protocol, with every setting and pre-registered rule and the date
+The full protocol, with every setting and pre-specified rule and the date
 it was fixed, is in [docs/PROTOCOL.md](docs/PROTOCOL.md). Paper figures and
 tables: [paper/](paper/README.md).
 
-**Paper:** _link to follow (arXiv)._
+**Paper:** _Who Pays for Byzantine Robustness? Validity, Data-Share
+Dictatorships, and Fairness When Only a Few Hospitals Collaborate._
+arXiv preprint forthcoming.
 
 ## Install
 
@@ -74,7 +76,7 @@ terms, which you must accept yourself.
   test images with an exact duplicate in training; `isic_duplicates.py`
   lists them and `grid_isic.sh noleak` measures their effect (≤ 0.2
   points).
-- **MNIST** (the Block A sanity check) is downloaded by torchvision.
+- **MNIST** (the sanity check: 20 synthetic clients) is downloaded by torchvision.
 
 Everything goes under `data/` (git-ignored).
 
@@ -128,7 +130,7 @@ re-derived with `tune_cc.py`, `select_lr_tcga.py`, `select_lr_isic.py` and
 | `grid_*.sh` | the exact grids behind the paper |
 | `summarize.py`, `analyze_*.py`, `validity_table.py` | metrics, tables, diagnostics |
 | `make_paper.py`, `paper/` | paper figures and tables |
-| `docs/PROTOCOL.md` | settings, pre-registered rules, amendments |
+| `docs/PROTOCOL.md` | settings, pre-specified rules, amendments |
 | `test_*.py` | tests (run directly with Python) |
 
 ## Licence and credits

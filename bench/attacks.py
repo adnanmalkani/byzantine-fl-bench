@@ -7,7 +7,7 @@ label_flip is data poisoning: those clients train on flipped labels instead.
 import torch
 
 ATTACKS = ["none", "label_flip", "sign_flip", "gaussian", "alie", "alie_z1", "ipm"]
-# alie_z1 (pre-registered 2026-10-13, docs/PROTOCOL.md): ALIE with a fixed z = 1. With few
+# alie_z1 (pre-specified 2026-10-13, docs/PROTOCOL.md): ALIE with a fixed z = 1. With few
 # hospitals Baruch's formula gives z <= 0.43 (0 at n = 4 or 6 with f = 1), so
 # "alie" barely leaves the honest spread; z = 1 tests an attacker that hides
 # one standard deviation out. Run wherever "alie" is defined; only z differs.

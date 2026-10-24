@@ -1,6 +1,6 @@
 """Choose the learning rate and number of rounds for Fed-ISIC2019's main
 setting (frozen-backbone features, linear layer, SGD), by the rule
-pre-registered in docs/PROTOCOL.md ("Learning-rate screen", 2026-10-16).
+pre-specified in docs/PROTOCOL.md ("Learning-rate screen", 2026-10-16).
 
 Clean sample-weighted FedAvg, FLamby's batch 64 and 100 local steps, seeds
 0-19, 200 rounds, evaluated every round on the POOLED VALIDATION set (10% of

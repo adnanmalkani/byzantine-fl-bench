@@ -59,7 +59,7 @@ The server assumes f_assumed = f in clean runs. Claims supported:
 | `tab_repro.tex` | FLamby reproductions (heart and TCGA: 5 seeds; ISIC: FLamby's own code, 2 seeds vs FLamby's 5). | setup |
 | `tab_isic_k10.tex` | Appendix: ISIC worst honest centre with k = 5 (main) and k = 10 test images per class (centre 5 drops out at k = 10): clean (same honest centres) and mean of real attacks, f = 1 and f = 2. | setup |
 | `tab_isic_leak.tex` | Appendix: ISIC duplicates check, change in pooled / worst-centre balanced accuracy when the 17 leaked test images are dropped (clean runs). | setup |
-| `tab_mnist.tex` | Appendix: MNIST Block A (20 synthetic clients, α 0.5, 4 attackers, 3 seeds), accuracy per rule and attack. | 7 |
+| `tab_mnist.tex` | Appendix: MNIST sanity check (20 synthetic clients, α 0.5, 4 attackers, 3 seeds), accuracy per rule and attack. | 7 |
 
 ## Notes for captions
 

@@ -1,5 +1,5 @@
 """Choose the learning rate and number of rounds for Fed-TCGA-BRCA's main
-setting, by the rule pre-registered in the README at commit 90341e4 (now docs/PROTOCOL.md).
+setting, by the rule pre-specified in the README at commit 90341e4 (now docs/PROTOCOL.md).
 
 Clean sample-weighted FedAvg, FLamby's other settings (batch 8, 100 local
 steps), seeds 0-19, 200 rounds, evaluated every round on the POOLED

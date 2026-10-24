@@ -20,7 +20,7 @@ Survival data (TCGA, metric = C-index): avg_acc is the stratified C-index
 (within-region comparable pairs pooled = per-region C-indices weighted by
 pairs); worst_honest_acc, worst_acc and gap only count regions with >= 3
 test deaths (Northeast, South, West, Midwest). All regions stay in avg_acc.
-Fed-ISIC2019 (docs/PROTOCOL.md, pre-registered 2026-10-16): avg_acc is one balanced
+Fed-ISIC2019 (docs/PROTOCOL.md, pre-specified 2026-10-16): avg_acc is one balanced
 accuracy over all centres' test images pooled (FLamby's pooled test set).
 Per-centre accuracy is the balanced accuracy over only the classes with at
 least k test images at that centre, and a centre counts only with >= 2 such

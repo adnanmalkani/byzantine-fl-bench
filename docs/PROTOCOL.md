@@ -1,6 +1,6 @@
 # byzantine-fl-bench: protocol and decisions
 
-The full experimental protocol: every setting, pre-registered rule and
+The full experimental protocol: every setting, pre-specified rule and
 amendment, with dates (written as the project went; the dates show which
 rules were fixed before which results were seen). For installation and
 reproduction, see the [README](../README.md).
@@ -35,7 +35,7 @@ Gaussian noise, ALIE ("A Little Is Enough"), ALIE with a fixed z = 1
 (`alie_z1`), IPM (Inner Product Manipulation). Model-poisoning attackers are
 omniscient: they see all benign updates each round, a standard worst case.
 
-**`alie_z1` (pre-registered 2026-10-13, before any run with it).** ALIE
+**`alie_z1` (pre-specified 2026-10-13, before any run with it).** ALIE
 sends mean − z × std of the benign updates, per coordinate. Baruch et al.'s
 formula sets z from n and f, and with few hospitals it gives z ≤ 0.43 (z = 0
 at n = 4 or 6 with f = 1, where ALIE just sends the benign mean). So the
@@ -47,8 +47,8 @@ the clients or more) and differs only in z. Baruch's version (`alie`) is kept
 for comparability with the literature. Added to the heart grid (re-run for
 this attack only) and to the TCGA grid.
 
-**Knobs:** dataset (MNIST, Fashion-MNIST, CIFAR-10, plus a `synthetic`
-dataset for quick tests), non-IID level via Dirichlet alpha (0.1 = very
+**Knobs (synthetic-client runs):** dataset (MNIST for the sanity check,
+plus a `synthetic` dataset for quick tests), non-IID level via Dirichlet alpha (0.1 = very
 skewed, 100 = roughly IID), Byzantine fraction, seeds.
 
 If a rule's theoretical assumption is violated (e.g. Bulyan needs
@@ -259,7 +259,7 @@ until then any TCGA run stops at the prompt. Label flip does not apply
   collapses (FLamby: seed 43, ours: seed 46). FLamby's settings are used
   only for this reproduction table.
 
-### Main-setting learning rate and rounds (pre-registered 2026-10-11, before any run)
+### Main-setting learning rate and rounds (pre-specified 2026-10-11, before any run)
 
 Clean sample-weighted FedAvg, FLamby's other settings (batch 8, 100 local
 steps), seeds 0-19, 200 rounds, evaluated every round on the pooled
@@ -306,7 +306,7 @@ every rate. Stability is the priority: if FedAvg collapses on its own,
 attack damage cannot be told apart from instability.
 - Seeds that are not-learned at every rate in the grid (13 and 19) are
   *hard validation splits*: reported, and excluded from the stop condition.
-  They still count in A(r) (step 4), as pre-registered.
+  They still count in A(r) (step 4), as pre-specified.
 - 0.003 gets the slow-rate extension: all 20 seeds re-run to 400 rounds
   (collapse and not-learned judged over all 400 rounds).
 - If 0.003 then has zero collapsed seeds and every seed except the hard
@@ -349,7 +349,7 @@ Seeds are therefore cut where they help least:
   atomically (temporary file, then rename), so a killed run leaves no
   `.json` and is simply redone; finished runs are skipped.
 
-### Metrics (pre-registered 2026-10-11, before any grid run)
+### Metrics (pre-specified 2026-10-11, before any grid run)
 
 - **Main average:** the stratified (within-region) C-index: the comparable
   pairs of all regions, each pair inside one region, pooled into one
@@ -357,7 +357,7 @@ Seeds are therefore cut where they help least:
   with weights = comparable pairs. FLamby's pooled-test C-index, which also
   compares patients across regions, is used only in the reproduction table.
   *Correction (2026-10-11, before any TCGA result):* the first version of
-  this pre-registration (commit 90341e4) said "weighted by test patients"
+  this pre-specification (commit 90341e4) said "weighted by test patients"
   (heart's convention). That contradicted the decision already taken: with
   patient weights, Canada's 3 pairs would pull the average as if they were
   solid evidence (11 patients = 5% weight from 0.5% of the pairs).
@@ -454,7 +454,7 @@ Both must be credited in the paper.
   one published std (`results_tables/flamby_isic_repro.csv`; 162 and 187
   min per seed).
 
-### Main-setting rules (pre-registered 2026-10-16, before any run)
+### Main-setting rules (pre-specified 2026-10-16, before any run)
 
 Adapter: `bench/tasks.py` (`fed_isic2019`): one client per centre, a
 linear layer (1280 -> 8, FLamby's final layer) on the cached features,
